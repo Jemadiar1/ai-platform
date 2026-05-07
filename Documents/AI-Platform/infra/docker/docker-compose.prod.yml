@@ -1,0 +1,133 @@
+# ============================================================
+# Docker Compose para Producción en VPS
+# ============================================================
+# Servicios:
+#   - app: AI Platform backend (FastAPI + Ragnar)
+#   - postgres: Base de datos PostgreSQL
+#   - redis: Broker de Celery
+#
+# Uso:
+#   docker compose -f infra/docker/docker-compose.prod.yml up -d
+# ============================================================
+
+services:
+  # ---- AI Platform Backend ----
+  app:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+    container_name: ai-platform-api
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      # Entorno
+      - APP_ENV=production
+      - ENVIRONMENT=production
+      - DEBUG=false
+      
+      # Base de datos
+      - DATABASE_URL=postgresql+psycopg://aiplatform:${POSTGRES_PASSWORD}@postgres:5432/ai_platform
+      
+      # Redis
+      - REDIS_URL=redis://redis:6379/0
+      
+      # Seguridad
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_EXPIRATION_HOURS=24
+      
+      # Clerk (Auth)
+      - CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
+      - CLERK_API_URL=https://api.clerk.com
+      
+      # Stripe (Billing)
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      
+      # LLM (Ragnar)
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_API_URL=https://openrouter.ai/api/v1
+      
+      # WhatsApp
+      - WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID}
+      - WHATSAPP_ACCESS_TOKEN=${WHATSAPP_ACCESS_TOKEN}
+      
+      # Vapi (Voz)
+      - VAPI_API_KEY=${VAPI_API_KEY}
+      
+      # Logging
+      - LOG_LEVEL=INFO
+      
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    
+    volumes:
+      - ai-platform-logs:/app/logs
+    networks:
+      - ai-platform-network
+    
+    # Límites de recursos
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+
+  # ---- PostgreSQL ----
+  postgres:
+    image: postgres:16-alpine
+    container_name: ai-platform-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=ai_platform
+      - POSTGRES_USER=aiplatform
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - ai-platform-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aiplatform -d ai_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ---- Redis (Celery Broker) ----
+  redis:
+    image: redis:7-alpine
+    container_name: ai-platform-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - ai-platform-network
+    command: redis-server --appendonly yes
+
+# ============================================================
+# Volúmenes para persistencia
+# ============================================================
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  ai-platform-logs:
+    driver: local
+
+# ============================================================
+# Red aislada para los servicios
+# ============================================================
+networks:
+  ai-platform-network:
+    driver: bridge

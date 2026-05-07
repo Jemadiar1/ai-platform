@@ -1,0 +1,62 @@
+# Docker ignore - archivos no necesarios en la imagen
+
+# Git
+.git
+.gitignore
+
+# Documentación
+docs/
+README.md
+*.md
+
+# Apps frontend (no se necesitan en el backend)
+apps/
+packages/
+services/
+workers/
+infra/ (excepto docker/)
+!infra/docker/**
+
+# Observabilidad
+observability/
+
+# Configuración de IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.pytest_cache/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Archivos temporales
+.DS_Store
+Thumbs.db
+*.tmp
+
+# Scripts locales
+*.ps1
+!infra/docker/*.sh
