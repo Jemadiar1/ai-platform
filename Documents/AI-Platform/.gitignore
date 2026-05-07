@@ -1,0 +1,12 @@
+# Backend Python
+backend/
+backend/__pycache__/
+backend/src/__pycache__/
+backend/src/ai_platform/__pycache__/
+backend/src/ai_platform/**/*.pyc
+backend/src/ai_platform/**/*.pyo
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/venv/
+backend/.venv/
+backend/poetry.lock

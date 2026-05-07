@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@ai/shared-types": ["packages/shared-types/src"],
+      "@ai/shared-schemas": ["packages/shared-schemas/src"],
+      "@ai/shared-prompts": ["packages/shared-prompts/src"],
+      "@ai/ui-kit": ["packages/ui-kit/src"]
+    }
+  }
+}
+
