@@ -23,7 +23,7 @@ from typing import Optional, Dict, Any, List
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from ai_platform.database import get_session
+from ai_platform.database import make_session
 from ai_platform.core.security import scanner, prompt_sanitizer
 from ai_platform.orchestrator.session import SessionManager
 
@@ -147,7 +147,7 @@ class MemoryManager:
         # Check limits
         max_chars = self.max_memory_chars if entry_type == "memory" else self.max_user_chars
 
-        with get_session() as db:
+        with make_session() as db:
             # Get current total
             result = db.execute(
                 text("""
@@ -282,7 +282,7 @@ class MemoryManager:
         memory_text = await self._get_bounded_memory(session_id)
         user_text = await self._get_bounded_user_profile(session_id)
 
-        with get_session() as db:
+        with make_session() as db:
             result = db.execute(
                 text("""
                     SELECT 
@@ -325,7 +325,7 @@ class MemoryManager:
         """
         Obtener memoria acotada (MEMORY.md equivalent).
         """
-        with get_session() as db:
+        with make_session() as db:
             result = db.execute(
                 text("""
                     SELECT content
@@ -359,7 +359,7 @@ class MemoryManager:
         """
         Obtener perfil de usuario acotado (USER.md equivalent).
         """
-        with get_session() as db:
+        with make_session() as db:
             result = db.execute(
                 text("""
                     SELECT content
@@ -397,7 +397,7 @@ class MemoryManager:
         """
         Buscar contexto relevante en mensajes anteriores.
         """
-        with get_session() as db:
+        with make_session() as db:
             result = db.execute(
                 text("""
                     SELECT role, content, created_at

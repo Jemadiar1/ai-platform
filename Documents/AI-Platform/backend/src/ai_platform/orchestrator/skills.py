@@ -24,7 +24,7 @@ from typing import Optional, Dict, Any, List
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from ai_platform.database import get_session
+from ai_platform.database import make_session
 from ai_platform.core.config import get_settings
 
 logger = logging.getLogger(__name__)

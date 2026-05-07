@@ -75,3 +75,22 @@ def get_db_session():
         raise
     finally:
         session.close()
+
+
+def make_session():
+    """
+    Crear manualmente una sesión de BD (para usar fuera de FastAPI).
+    
+    Útil para módulos que no son endpoints:
+        with make_session() as db:
+            db.execute(...)
+    """
+    session = session_factory()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()

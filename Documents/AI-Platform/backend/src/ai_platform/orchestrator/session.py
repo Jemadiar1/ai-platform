@@ -23,7 +23,7 @@ from uuid import uuid4
 from sqlalchemy import select, func, text
 from sqlalchemy.orm import Session
 
-from ai_platform.database import get_session
+from ai_platform.database import make_session
 from ai_platform.core.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -155,7 +155,7 @@ class SessionManager:
             parent_id=parent_id,
         )
 
-        with get_session() as db:
+        with make_session() as db:
             db.execute(
                 text("""
                     INSERT INTO sessions (
@@ -233,7 +233,7 @@ class SessionManager:
         Retorna:
             Dict con datos de la sesión o None
         """
-        with get_session() as db:
+        with make_session() as db:
             result = db.execute(
                 text("SELECT * FROM sessions WHERE id = :id AND tenant_id = :tenant_id"),
                 {"id": session_id, "tenant_id": tenant_id},
@@ -272,7 +272,7 @@ class SessionManager:
                 - session_info: metadata de la sesión
                 - token_estimate: tokens estimados en contexto
         """
-        with get_session() as db:
+        with make_session() as db:
             # Obtener últimos mensajes
             messages = db.execute(
                 text("""
@@ -347,7 +347,7 @@ class SessionManager:
             token_count=token_count,
         )
 
-        with get_session() as db:
+        with make_session() as db:
             db.execute(
                 text("""
                     INSERT INTO messages (
@@ -402,7 +402,7 @@ class SessionManager:
         Retorna:
             Lista de resultados con sesión_id, role, content, created_at
         """
-        with get_session() as db:
+        with make_session() as db:
             # Intentar usar pg_trgm para búsqueda completa
             result = db.execute(
                 text("""
@@ -445,7 +445,7 @@ class SessionManager:
         Retorna:
             Lista de sesiones
         """
-        with get_session() as db:
+        with make_session() as db:
             result = db.execute(
                 text("""
                     SELECT id, title, user_id, created_at, updated_at, message_count
