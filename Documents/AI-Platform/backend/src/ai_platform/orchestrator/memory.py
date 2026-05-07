@@ -149,11 +149,12 @@ class MemoryManager:
 
         with make_session() as db:
             # Get current total
+            # agent_memory no tiene session_id aún, usamos agent_id como referencia
             result = db.execute(
                 text("""
                     SELECT COALESCE(SUM(CHAR_LENGTH(content)), 0) as total
                     FROM agent_memory
-                    WHERE session_id = :session_id
+                    WHERE agent_id = :session_id
                       AND type = :type
                       AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id)
                 """),
@@ -176,7 +177,7 @@ class MemoryManager:
             existing = db.execute(
                 text("""
                     SELECT id FROM agent_memory
-                    WHERE session_id = :session_id
+                    WHERE agent_id = :session_id
                       AND type = :type
                       AND content = :content
                       AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id)
@@ -195,10 +196,10 @@ class MemoryManager:
             db.execute(
                 text("""
                     INSERT INTO agent_memory (
-                        session_id, tenant_id, type, content, char_count, created_at
+                        tenant_id, agent_id, type, content, char_count, created_at
                     ) VALUES (
-                        :session_id,
                         (SELECT tenant_id FROM sessions WHERE id = :session_id),
+                        :session_id,
                         :type, :content, :char_count, NOW()
                     )
                 """),
@@ -289,7 +290,7 @@ class MemoryManager:
                         COUNT(*) FILTER (WHERE type = 'memory') as memory_count,
                         COUNT(*) FILTER (WHERE type = 'user') as user_count
                     FROM agent_memory
-                    WHERE session_id = :session_id
+                    WHERE agent_id = :session_id
                       AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id)
                 """),
                 {"session_id": session_id},
@@ -330,7 +331,7 @@ class MemoryManager:
                 text("""
                     SELECT content
                     FROM agent_memory
-                    WHERE session_id = :session_id
+                    WHERE agent_id = :session_id
                       AND type = 'memory'
                       AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id)
                     ORDER BY created_at DESC
@@ -364,7 +365,7 @@ class MemoryManager:
                 text("""
                     SELECT content
                     FROM agent_memory
-                    WHERE session_id = :session_id
+                    WHERE agent_id = :session_id
                       AND type = 'user'
                       AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id)
                     ORDER BY created_at DESC

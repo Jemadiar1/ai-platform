@@ -417,7 +417,7 @@ class SkillManager:
 
     def _get_tenant_skills(self, tenant_id: str) -> List[Dict[str, Any]]:
         """Obtener skills custom de un tenant."""
-        with get_session() as db:
+        with make_session() as db:
             result = db.execute(
                 text("""
                     SELECT name, description, category, version, content
@@ -444,7 +444,7 @@ class SkillManager:
         skill_name: str,
     ) -> Optional[Dict[str, Any]]:
         """Obtener un skill custom de un tenant."""
-        with get_session() as db:
+        with make_session() as db:
             result = db.execute(
                 text("""
                     SELECT name, description, category, version, content
