@@ -1,5 +1,4 @@
-# Backend Python
-backend/
+# Backend Python - ignorar solo artefactos, NO el código fuente
 backend/__pycache__/
 backend/src/__pycache__/
 backend/src/ai_platform/__pycache__/
