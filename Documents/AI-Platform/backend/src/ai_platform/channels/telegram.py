@@ -1,0 +1,308 @@
+"""
+Integración de Telegram para AI Platform.
+
+Permite enviar y recibir mensajes a través de un bot de Telegram.
+El bot responde a los mensajes del usuario y los enruta a Ragnar
+para decidir qué módulo ejecutar.
+
+Configuración:
+- TELEGRAM_BOT_TOKEN: Token del bot desde @BotFather
+- Se usa formato MarkdownHTML para formateo de texto
+
+"""
+
+import logging
+from typing import Any, Dict, List, Optional
+
+import httpx
+from ai_platform.channels.base import BaseChannel
+from ai_platform.core.config import get_settings
+
+logger = logging.getLogger(__name__)
+
+
+class TelegramChannel(BaseChannel):
+    """
+    Handler de canal para Telegram.
+
+    Envía y recibe mensajes a través de la Telegram Bot API.
+    Implementa chunking para mensajes > 4096 caracteres (límite de Telegram).
+    """
+
+    channel = "telegram"
+
+    def __init__(self):
+        self.settings = get_settings()
+        self.token = self.settings.TELEGRAM_BOT_TOKEN
+        self.base_url = f"https://api.telegram.org/bot{self.token}" if self.token else ""
+
+    async def validate_webhook(self, payload: Any, headers: dict = None) -> dict:
+        """
+        Validar que el webhook viene de Telegram.
+
+        Verifica:
+        1. El secret token del header X-Telegram-Bot-Api-Secret-Token
+           (requerido cuando se configura webhook con secret token en BotFather)
+        2. Que el update tenga update_id válido
+        3. Que el mensaje no sea de un bot (para prevenir eco)
+
+        Parámetros:
+            payload: Dict con el update de Telegram
+            headers: Diccionario con los headers HTTP (opcional)
+
+        Retorna:
+            Dict con claves:
+                - valid: bool, si el webhook es válido
+                - reason: str, razón de invalidación si aplica
+        """
+        if not isinstance(payload, dict):
+            logger.warning("Payload de Telegram no es un dict")
+            return {"valid": False, "reason": "payload_no_es_dict"}
+
+        # Verificar secret token del header X-Telegram-Bot-Api-Secret-Token
+        if headers and self.token:
+            secret_token = headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+            if secret_token and secret_token != self.token:
+                logger.warning("X-Telegram-Bot-Api-Secret-Token no coincide")
+                return {"valid": False, "reason": "secret_token_no_coincide"}
+
+        # Verificar estructura básica: un update debe tener 'update_id' y 'message' o 'edited_message'
+        update_id = payload.get("update_id")
+        if not update_id:
+            logger.warning("Update sin update_id")
+            return {"valid": False, "reason": "sin_update_id"}
+
+        # Verificar que el mensaje no sea de un bot (para prevenir eco)
+        message = payload.get("message") or payload.get("edited_message") or payload.get("channel_post")
+        if message:
+            is_bot = message.get("is_bot")
+            if is_bot:
+                logger.info("Ignorando mensaje de bot")
+                return {"valid": False, "reason": "mensaje_de_bot"}
+
+        return {"valid": True, "reason": "webhook_valido"}
+
+    async def extract_message(self, raw_payload: Any) -> Dict[str, str]:
+        """
+        Extraer información del mensaje desde el formato Bot API de Telegram.
+
+        Formato de entrada:
+        {
+            "update_id": 123456,
+            "message": {
+                "message_id": 789,
+                "text": "Hola, necesito ayuda",
+                "from": {
+                    "id": 111222,
+                    "first_name": "Juan",
+                    "username": "juanperez"
+                },
+                "chat": {
+                    "id": 111222,
+                    "type": "private"
+                },
+                "date": 1234567890
+            }
+        }
+
+        Parámetros:
+            raw_payload: Update de Telegram
+
+        Retorna:
+            {
+                "user_id": "111222",
+                "user_name": "Juan",
+                "message_text": "Hola, necesito ayuda",
+                "chat_id": "111222"
+            }
+        """
+        if not isinstance(raw_payload, dict):
+            return {
+                "user_id": "",
+                "user_name": "",
+                "message_text": "",
+                "chat_id": "",
+            }
+
+        message = raw_payload.get("message") or raw_payload.get("edited_message") or raw_payload.get("channel_post")
+        if not message:
+            return {
+                "user_id": "",
+                "user_name": "",
+                "message_text": "",
+                "chat_id": "",
+            }
+
+        # Extraer información del usuario
+        user_info = message.get("from", {})
+        user_id = str(user_info.get("id", ""))
+        first_name = user_info.get("first_name", "")
+        last_name = user_info.get("last_name", "")
+        username = user_info.get("username", "")
+        user_name = first_name or username or "Usuario"
+
+        # Extraer chat_id (para responder)
+        chat_info = message.get("chat", {})
+        chat_id = str(chat_info.get("id", ""))
+
+        # Extraer texto del mensaje
+        message_text = message.get("text", "") or message.get("caption", "")
+
+        return {
+            "user_id": user_id,
+            "user_name": user_name,
+            "message_text": message_text,
+            "chat_id": chat_id,
+        }
+
+    async def send_message(
+        self,
+        chat_id: str,
+        text: str,
+        parse_mode: str = "HTML",
+        reply_markup: Optional[Dict] = None,
+    ) -> Any:
+        """
+        Enviar mensaje a un chat de Telegram.
+
+        Usa la API sendMessage de Telegram.
+        Soporta parse_mode HTML y reply_markup para botones interactivos.
+
+        Parámetros:
+            chat_id: ID del chat de Telegram
+            text: Contenido del mensaje
+            parse_mode: Formato de texto ("HTML" o "MarkdownV2")
+            reply_markup: Botones del bot (KeyboardMarkup/InlineKeyboardMarkup)
+
+        Retorna:
+            Dict con resultado de la API (message_id, etc.)
+        """
+        if not self.token:
+            logger.error("No se puede enviar mensaje: TELEGRAM_BOT_TOKEN no configurado")
+            return {"status": "error", "message": "Bot token no configurado"}
+
+        if not chat_id:
+            logger.error("No se puede enviar mensaje: chat_id vacío")
+            return {"status": "error", "message": "chat_id no proporcionado"}
+
+        url = f"{self.base_url}/sendMessage"
+
+        payload = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": parse_mode,
+        }
+
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+
+                if data.get("ok"):
+                    logger.info(f"Mensaje enviado a Telegram chat_id={chat_id}")
+                    return data
+                else:
+                    logger.error(f"Error enviando a Telegram: {data}")
+                    return {"status": "error", "message": data.get("description", "Error desconocido")}
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error enviando mensaje a Telegram: {e.response.status_code} - {e.response.text}")
+            return {"status": "error", "message": f"HTTP {e.response.status_code}"}
+        except httpx.RequestError as e:
+            logger.error(f"Error de red enviando mensaje a Telegram: {e}")
+            return {"status": "error", "message": "Error de red"}
+        except Exception as e:
+            logger.error(f"Error inesperado enviando mensaje a Telegram: {e}")
+            return {"status": "error", "message": str(e)}
+
+    async def send_answer(
+        self,
+        callback_query_id: str,
+        text: str,
+        show_alert: bool = False,
+    ) -> Any:
+        """
+        Responder a una callback query (botones inline).
+
+        Se usa cuando el usuario presiona un botón inline del bot.
+
+        Parámetros:
+            callback_query_id: ID de la callback query
+            text: Texto a mostrar al usuario
+            show_alert: Si True, muestra como alerta emergente
+
+        Retorna:
+            Dict con resultado de la API
+        """
+        if not self.token:
+            return {"status": "error", "message": "Bot token no configurado"}
+
+        url = f"{self.base_url}/answerCallbackQuery"
+        payload = {
+            "callback_query_id": callback_query_id,
+            "text": text,
+            "show_alert": show_alert,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                return data
+        except Exception as e:
+            logger.error(f"Error respondiendo callback query: {e}")
+            return {"status": "error", "message": str(e)}
+
+    def _chunk_message(self, text: str, max_length: int = 4096) -> List[str]:
+        """
+        Dividir mensaje en chunks de máximo 4096 caracteres (límite de Telegram).
+
+        Sobrescribe el método base para usar el límite correcto de Telegram.
+
+        Parámetros:
+            text: Texto a dividir
+            max_length: 4096 (límite de Telegram)
+
+        Retorna:
+            Lista de chunks
+        """
+        return super()._chunk_message(text, max_length=max_length)
+
+
+def create_telegram_keyboard(buttons: List[List[str]], url: Optional[str] = None) -> Dict:
+    """
+    Crear un teclado personalizado para Telegram.
+
+    Parámetros:
+        buttons: Lista de filas, cada fila es una lista de botones
+        url: URL opcional para InlineKeyboardButton (web app)
+
+    Retorna:
+        Dict con formato Telegram KeyboardMarkup
+    """
+    keyboard = []
+    for row in buttons:
+        keyboard_row = []
+        for label in row:
+            if url:
+                keyboard_row.append({
+                    "text": label,
+                    "url": url,
+                })
+            else:
+                keyboard_row.append({
+                    "text": label,
+                    "callback_data": label,
+                })
+        keyboard.append(keyboard_row)
+
+    return {
+        "keyboard": keyboard,
+        "resize_keyboard": True,
+        "one_time_keyboard": True,
+    }
