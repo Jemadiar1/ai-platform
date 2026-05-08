@@ -83,6 +83,21 @@ class Settings(BaseSettings):
     # === WhatsApp API ===
     WHATSAPP_PHONE_NUMBER_ID: Optional[str] = None
     WHATSAPP_ACCESS_TOKEN: Optional[str] = None
+    WHATSAPP_APP_SECRET: Optional[str] = Field(
+        default=None,
+        description="App secret de Meta para verificar firmas HMAC-SHA256 de webhooks de WhatsApp"
+    )
+    WHATSAPP_WEBHOOK_VERIFY_TOKEN: str = Field(
+        default="neuralcrew_verify_token",
+        description="Token de verificación para webhooks de Facebook"
+    )
+    
+    # === Telegram Bot ===
+    TELEGRAM_BOT_TOKEN: Optional[str] = None
+    
+    # === Discord Bot ===
+    DISCORD_BOT_TOKEN: Optional[str] = None
+    DISCORD_CHANNEL_ID: Optional[str] = None
     
     # === Vapi.ai (Voz IA) ===
     VAPI_API_KEY: Optional[str] = None
