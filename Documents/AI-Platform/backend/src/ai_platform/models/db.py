@@ -300,3 +300,43 @@ class Message(Base):
     
     def __repr__(self):
         return f"<Message(role={self.role}, session={self.session_id})>"
+
+
+class Contact(Base):
+    """
+    Tabla: contacts
+    
+    CRM básico para gestión de contactos.
+    Cada contacto pertenece a un tenant y tiene datos de contacto
+    con soporte para campos personalizados en extra_data.
+    """
+    __tablename__ = "contacts"
+    
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id = Column(
+        PG_UUID(as_uuid=True),
+        nullable=False,
+        index=True,
+        doc="Tenant al que pertenece este contacto"
+    )
+    name = Column(String(255), nullable=False, default="", doc="Nombre del contacto")
+    email = Column(String(255), nullable=False, default="", index=True, doc="Email principal")
+    phone = Column(String(50), nullable=False, default="", doc="Teléfono en formato E.164")
+    notes = Column(Text, nullable=False, default="", doc="Notas internas sobre el contacto")
+    extra_data = Column(
+        JSON,
+        nullable=False,
+        default=dict,
+        doc="Campos personalizados: source, tags, company, etc."
+    )
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False
+    )
+    
+    def __repr__(self):
+        return f"<Contact(id={self.id}, name={self.name}, email={self.email})>"
