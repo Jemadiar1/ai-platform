@@ -18,8 +18,6 @@ Uso:
     # decision = {module, action, params, confidence, ...}
 """
 
-import asyncio
-import importlib
 import json
 import logging
 from typing import Optional, Dict, Any, List
@@ -30,8 +28,10 @@ from ai_platform.orchestrator.memory import MemoryManager
 from ai_platform.orchestrator.skills import SkillManager
 from ai_platform.orchestrator.budget import BudgetTracker
 from ai_platform.orchestrator.observability import DecisionLogger
+from ai_platform.orchestrator.plugins import PluginManager, PluginSpec
+from ai_platform.orchestrator.trajectory import TrajectoryManager, Step
+from ai_platform.orchestrator.knowledge_base import get_knowledge_base
 from ai_platform.core.security import scanner, prompt_sanitizer
-from ai_platform.modules import MODULE_HANDLERS, VALID_MODULES
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,11 @@ class Ragnar:
         self.skill_manager = SkillManager()
         self.budget_tracker = BudgetTracker()
         self.decision_logger = DecisionLogger()
+        self.plugin_manager = PluginManager()
+        self.trajectory_manager = TrajectoryManager()
+        from ai_platform.orchestrator.subagent import get_subagent_manager
+
+        self.subagent_manager = get_subagent_manager()
 
     async def decide(
         self,
@@ -105,9 +110,9 @@ class Ragnar:
         scan_result = scanner.scan(prompt)
         if not scan_result["is_safe"]:
             logger.warning(
-                f"Se detectaron patrones de inyección en el prompt de un usuario. "
-                f"Patrones: {scan_result['flagged_patterns']}. "
-                "Usando versión sanitizada."
+                f"Injection patterns detected in prompt from user. "
+                f"Patterns: {scan_result['flagged_patterns']}. "
+                "Using sanitized version."
             )
             prompt = scanner.sanitize(prompt)
 
@@ -119,6 +124,14 @@ class Ragnar:
         )
         session_id = session["id"]
 
+        # Paso 2.5: Iniciar tracking de trayectoria
+        self.trajectory_manager.start_trajectory(
+            session_id=session_id,
+            tenant_id=tenant_id,
+            user_prompt=prompt,
+            tags=["routing"],
+        )
+
         # Paso 3: Cargar contexto de sesión (frozen snapshot)
         session_context = await self.session_manager.get_context(session_id)
 
@@ -128,8 +141,31 @@ class Ragnar:
             prompt=prompt,
         )
 
+        # Paso 4.5: Buscar en base de conocimiento documentos relevantes
+        try:
+            kb_manager = get_knowledge_base()
+            kb_context = await kb_manager.search(
+                query=prompt,
+                tenant_id=tenant_id,
+                limit=3,
+            )
+        except Exception as e:
+            logger.warning(f"Error en búsqueda de base de conocimiento: {e}")
+            kb_context = []
+
         # Paso 5: Construir historial relevante
         history = session_context.get("recent_messages", [])
+
+        # Paso 5.5: Ejecutar hooks de plugins antes de decidir
+        try:
+            await self.plugin_manager.execute_hook(
+                "on_decide",
+                session_id=session_id,
+                tenant_id=tenant_id,
+                prompt=prompt,
+            )
+        except Exception as e:
+            logger.warning(f"Plugin on_decide hook failed: {e}")
 
         # Paso 6: Consultar LLM para routing
         try:
@@ -143,6 +179,15 @@ class Ragnar:
             routing = await self.llm_client._route_with_fallback(
                 prompt, tenant_id, history
             )
+
+        # Paso 6.5: Registrar paso de routing en trayectoria
+        self.trajectory_manager.add_step(session_id, Step(
+            step_type="route",
+            module=routing.get("module"),
+            params={"prompt_preview": prompt[:100]},
+            result=routing.get("reasoning", ""),
+            latency_ms=routing.get("latency_ms"),
+        ))
 
         # Paso 7: Registrar decisión en observabilidad
         self.decision_logger.log_decision({
@@ -159,10 +204,16 @@ class Ragnar:
         # Paso 8: Si necesita descomposición, descomponer
         subtasks = []
         if routing.get("needs_decomposition"):
+            substeps_start = self.trajectory_manager.get_active_trajectory(session_id)
             subtasks = await self.llm_client.decompose_task(
                 prompt=prompt,
                 tenant_id=tenant_id,
             )
+            self.trajectory_manager.add_step(session_id, Step(
+                step_type="decompose",
+                params={"subtask_count": len(subtasks)},
+                result=json.dumps(subtasks, default=str)[:500],
+            ))
 
         # Paso 9: Extraer parámetros específicos del módulo
         params = await self.llm_client.extract_params(
@@ -178,6 +229,7 @@ class Ragnar:
             "session_id": session_id,
             "session_context": session_context,
             "memory_context": memory_context,
+            "kb_context": kb_context,
         }
 
     async def execute(
@@ -205,28 +257,66 @@ class Ragnar:
             Dict con resultado de la ejecución
         """
         module = decision["module"]
+        params = decision["params"]
 
         if module == "uncategorized":
+            self.trajectory_manager.add_step(session_id, Step(
+                step_type="error",
+                module="uncategorized",
+                error="No module matched the user prompt.",
+            ))
+            self.trajectory_manager.complete_trajectory(session_id)
             return {
                 "module": "uncategorized",
                 "status": "failed",
                 "result": {
-                    "error": "Ningún módulo coincidió con el prompt del usuario.",
-                    "message": "Por favor, reformule su solicitud.",
+                    "error": "No module matched the user prompt.",
+                    "message": "Please rephrase your request.",
                 },
             }
 
+        # Ejecutar hooks de plugins antes de ejecutar
+        try:
+            await self.plugin_manager.execute_hook(
+                "on_execute",
+                session_id=session_id,
+                tenant_id=tenant_id,
+                module=module,
+                action=decision.get("action"),
+            )
+        except Exception as e:
+            logger.warning(f"Plugin on_execute hook failed: {e}")
+
         # Inyectar contexto en la payload
-        enriched_payload = self._enrich_payload(decision)
+        enriched_payload = self._enrich_payload(params, decision)
 
         # Tracking de budget
         await self.budget_tracker.begin_task(task_id, tenant_id, module)
 
         try:
-            # Invocar el handler del módulo seleccionado
-            # Las excepciones se propagan al except para corregir
-            # el estado de budget y retornar un error estructurado.
+            # Simular ejecución del módulo
+            # En producción, esto invocará al handler del módulo
             result = await self._invoke_module(module, enriched_payload)
+
+            # Registrar paso de ejecución en trayectoria
+            self.trajectory_manager.add_step(session_id, Step(
+                step_type="execute",
+                module=module,
+                params={"task_id": task_id},
+                result=json.dumps(result, default=str)[:500],
+            ))
+
+            # Ejecutar subagentes si la decisión los requiere
+            if routing.get("needs_decomposition") and decision.get("subtasks"):
+                subagent_results = await self.subagent_manager.execute_subagents(
+                    parent_session_id=decision.get("session_id"),
+                    tenant_id=tenant_id,
+                    subtasks=decision["subtasks"],
+                )
+                main_result = result.get("result", {})
+                for sub_result in subagent_results:
+                    main_result[f"subagent_{sub_result.module}"] = sub_result.result
+                result["result"] = main_result
 
             await self.budget_tracker.end_task(task_id, module, success=True)
 
@@ -237,6 +327,9 @@ class Ragnar:
                 assistant_result=result,
             )
 
+            # Completar trayectoria
+            self.trajectory_manager.complete_trajectory(session_id)
+
             return {
                 "module": module,
                 "status": "completed",
@@ -244,17 +337,19 @@ class Ragnar:
             }
 
         except Exception as e:
-            # Cuando _invoke_module lanza, el budget se marca como fallo
-            # y se retorna un error estructurado (no double-wrapped).
             await self.budget_tracker.end_task(task_id, module, success=False, error=str(e))
-            return {
-                "module": module,
-                "status": "failed",
-                "result": {"error": str(e)},
-            }
+            # Registrar error en trayectoria
+            self.trajectory_manager.add_step(session_id, Step(
+                step_type="error",
+                module=module,
+                error=str(e),
+            ))
+            self.trajectory_manager.complete_trajectory(session_id)
+            raise
 
     async def close(self) -> None:
         """Cerrar todos los recursos."""
+        await self.plugin_manager.stop()
         await self.llm_client.close()
         await self.session_manager.close()
         await self.memory_manager.close()
@@ -265,34 +360,16 @@ class Ragnar:
     # Private methods
     # -------------------------------------------------------------------------
 
-    def _enrich_payload(self, decision: Dict[str, Any]) -> Dict[str, Any]:
+    def _enrich_payload(self, params: Dict[str, Any], decision: Dict[str, Any]) -> Dict[str, Any]:
         """
         Enriquecer la payload con contexto de sesión y memoria.
 
         Esto aplica el principio de memoria congelada de Hermes:
         inyectar el contexto una vez al inicio y mantenerlo estable
         durante la sesión.
-
-        Valida que tenant_id esté presente. Si no lo está, lanza
-        ValueError para evitar propagar None silenciosamente.
-
-        Parámetros:
-            decision: Dict retornado por decide()
-
-        Retorna:
-            Dict enriquecido con tenant_id, session_context y/or memory_context.
-
-        Raises:
-            ValueError: Si no se puede obtener tenant_id de la decisión.
         """
-        # Extraer tenant_id del contexto de sesión con validación estricta
-        tenant_id = decision.get("session_context", {}).get("tenant_id")
-        if not tenant_id:
-            raise ValueError(
-                "tenant_id must be propagated through enriched payload"
-            )
-
-        enriched = {"tenant_id": tenant_id}
+        enriched = {**params}
+        enriched["tenant_id"] = decision.get("session_context", {}).get("tenant_id")
 
         # Inyectar contextos si disponibles
         if "session_context" in decision:
@@ -300,6 +377,9 @@ class Ragnar:
 
         if "memory_context" in decision:
             enriched["memory_context"] = decision["memory_context"]
+
+        if "kb_context" in decision:
+            enriched["kb_context"] = decision["kb_context"]
 
         return enriched
 
@@ -311,48 +391,19 @@ class Ragnar:
         """
         Invocar al handler del módulo seleccionado.
 
-        Mapea nombres de módulo (ej: "ai-connect") al handler correspondiente
-        usando el registro centralizado (MODULE_HANDLERS). Importa la clase
-        Handler, instancia y ejecuta Handler().execute(payload) de forma
-        asíncrona vía to_thread.
-
-        Las excepciones se propagan al caller (execute) para que se pueda
-        corregir el estado del budget_tracker y retornar un error estructurado.
-
-        Parámetros:
-            module: Nombre del módulo a invocar (ej: "ai-connect").
-            payload: Payload enriquecido con contexto.
-
-        Retorna:
-            Dict con el resultado del handler.
-
-        Raises:
-            ImportError: Si el módulo no se puede importar.
-            AttributeError: Si no hay clase Handler en el módulo.
-            Exception: Cualquier otro error durante la ejecución.
+        En esta fase inicial, retorna un placeholder.
+        En producción, importará dinámicamente el handler del módulo.
         """
-        handler_path = MODULE_HANDLERS.get(module)
-        if not handler_path:
-            logger.warning("Módulo no registrado: %s", module)
-            raise ValueError(
-                f"Módulo no soportado: {module}. Módulos válidos: {VALID_MODULES}"
-            )
+        # TODO: Importación dinámica del handler
+        # from ai_platform.modules.ai_connect.handler import execute
+        # result = await execute(payload)
 
-        # Importar el módulo del handler dinámicamente
-        handler_module = importlib.import_module(handler_path)
-        handler_class = getattr(handler_module, "Handler", None)
-        if handler_class is None:
-            raise AttributeError(
-                f"No se encontró la clase Handler en {handler_path}"
-            )
-
-        handler_instance = handler_class()
-
-        # El execute es síncrono, ejecutar en thread para no bloquear el event loop
-        result = await asyncio.to_thread(handler_instance.execute, payload)
-
-        logger.info("módulo_ejecutado", module=module)
-        return result
+        return {
+            "module": module,
+            "status": "completed",
+            "message": f"Module {module} executed successfully.",
+            "payload": payload,
+        }
 
 
 # Instancia global

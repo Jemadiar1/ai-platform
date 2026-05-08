@@ -15,15 +15,11 @@ Patrones de optimización:
 - Prompt caching para Claude (reduce costos 75%)
 - Fallback routing si un modelo falla
 - Timeout de 30 segundos por decisión
+- Rate limiting por servicio
+- Pricing real por token
 """
 
-import json
-import logging
-import time
-from typing import Optional, Dict, Any, List
-
-import httpx
-from ai_platform.core.config import get_settings
+from ai_platform.orchestrator.mcp import get_mcp_client
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +36,15 @@ ROUTING_MODELS = {
 LLM_TIMEOUT = 30.0
 
 # Headers para prompt caching de Claude
+# El header "anthropic-beta: prompt-caching-2024-07-31" habilita el caching
+# Solo funciona con modelos Anthropic Claude
 ANTHROPIC_CACHE_HEADER = {
     "anthropic-beta": "prompt-caching-2024-07-31"
 }
+
+# Marcador de punto de cacheo para Claude
+# Se coloca en el sistema para indicar dónde termina el contenido cacheable
+CACHE_BREAKPOINT = "\n--- INICIO DEL PROMPT DEL SISTEMA (este contenido se cachea) ---"
 
 
 class LLMClient:
@@ -73,6 +75,8 @@ class LLMClient:
             },
             timeout=LLM_TIMEOUT
         )
+        # Tracker de límites de tasa para rate limiting
+        self._rate_tracker = get_rate_limit_tracker()
 
     async def route_task(
         self,
@@ -101,6 +105,7 @@ class LLMClient:
                 - params: Parámetros extraídos del prompt
                 - confidence: Score de confianza (0.0 - 1.0)
                 - reasoning: Explicación de por qué eligió ese módulo
+                - cost_usd: Costo real de la llamada (si se pudo rastrear)
 
         Raises:
             RuntimeError: Si no hay API key configurada
@@ -117,26 +122,40 @@ class LLMClient:
         # Construir el mensaje del usuario
         user_message = self._build_routing_user_prompt(prompt, history)
 
+        # Modelo a usar (primario para Claude con caching)
+        model = ROUTING_MODELS["primary"]
+        is_claude = "claude" in model
+
+        # Aplicar rate limiting antes de hacer la solicitud
+        self._rate_tracker.wait_if_needed("openrouter")
+
         try:
             response = await self.client.post(
                 "/v1/chat/completions",
                 json={
-                    "model": ROUTING_MODELS["primary"],
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_message},
-                    ],
+                    "model": model,
+                    "messages": self._build_cached_messages(
+                        system_prompt=system_prompt,
+                        user_message=user_message,
+                        use_cache=is_claude and self.settings.USE_PROMPT_CACHE,
+                    ),
                     "max_tokens": 1024,
                     "temperature": 0.1,  # Baja temperatura para decisiones consistentes
                     "response_format": {"type": "json_object"},
-                    # Headers para prompt caching
-                    **({"extra_headers": ANTHROPIC_CACHE_HEADER} if "claude" in ROUTING_MODELS["primary"] else {}),
+                    # Headers para prompt caching (solo Claude)
+                    **({"extra_headers": ANTHROPIC_CACHE_HEADER} if is_claude else {}),
                 }
             )
 
+            # Registrar la solicitud en el tracker de rate limits
+            self._rate_tracker.record_request("openrouter", success=response.status_code == 200)
+
             if response.status_code == 200:
                 data = response.json()
-                return self._parse_routing_response(data)
+                result = self._parse_routing_response(data)
+                # Registrar costo real basado en tokens
+                self._record_llm_cost(model, data, result)
+                return result
 
             logger.warning(
                 f"Routing LLM failed with status {response.status_code}. "
@@ -146,9 +165,11 @@ class LLMClient:
 
         except httpx.TimeoutException:
             logger.warning("Routing LLM timed out. Using fallback.")
+            self._rate_tracker.record_request("openrouter", success=False)
             return await self._route_with_fallback(prompt, tenant_id, history)
         except Exception as e:
             logger.error(f"Routing LLM error: {e}")
+            self._rate_tracker.record_request("openrouter", success=False)
             return await self._route_with_fallback(prompt, tenant_id, history)
 
     async def decompose_task(
@@ -183,31 +204,45 @@ class LLMClient:
         system_prompt = self._build_decompose_system_prompt(tenant_id)
         user_message = f"Decompone la siguiente tarea en pasos específicos:\n\n{complex_prompt}"
 
+        model = ROUTING_MODELS["primary"]
+        is_claude = "claude" in model
+
+        # Aplicar rate limiting antes de hacer la solicitud
+        self._rate_tracker.wait_if_needed("openrouter")
+
         try:
             response = await self.client.post(
                 "/v1/chat/completions",
                 json={
-                    "model": ROUTING_MODELS["primary"],
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_message},
-                    ],
+                    "model": model,
+                    "messages": self._build_cached_messages(
+                        system_prompt=system_prompt,
+                        user_message=user_message,
+                        use_cache=is_claude and self.settings.USE_PROMPT_CACHE,
+                    ),
                     "max_tokens": 2048,
                     "temperature": 0.1,
                     "response_format": {"type": "json_object"},
-                    **({"extra_headers": ANTHROPIC_CACHE_HEADER} if "claude" in ROUTING_MODELS["primary"] else {}),
+                    # Headers para prompt caching (solo Claude)
+                    **({"extra_headers": ANTHROPIC_CACHE_HEADER} if is_claude else {}),
                 }
             )
 
+            # Registrar la solicitud en el tracker de rate limits
+            self._rate_tracker.record_request("openrouter", success=response.status_code == 200)
+
             if response.status_code == 200:
                 data = response.json()
-                return self._parse_decompose_response(data)
+                result = self._parse_decompose_response(data)
+                self._record_llm_cost(model, data, result)
+                return result
 
             logger.warning("Decomposition LLM failed. Using fallback.")
             return await self._decompose_with_fallback(complex_prompt, tenant_id)
 
         except Exception as e:
             logger.error(f"Decomposition LLM error: {e}")
+            self._rate_tracker.record_request("openrouter", success=False)
             return await self._decompose_with_fallback(complex_prompt, tenant_id)
 
     async def extract_params(
@@ -242,29 +277,44 @@ class LLMClient:
         system_prompt = self._build_extract_system_prompt(module, action)
         user_message = f"Extrae los parámetros relevantes de este input:\n\n{prompt}"
 
+        model = ROUTING_MODELS["fast"]
+        is_claude = "claude" in model
+
+        # Aplicar rate limiting antes de hacer la solicitud
+        self._rate_tracker.wait_if_needed("openrouter")
+
         try:
             response = await self.client.post(
                 "/v1/chat/completions",
                 json={
-                    "model": ROUTING_MODELS["fast"],
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_message},
-                    ],
+                    "model": model,
+                    "messages": self._build_cached_messages(
+                        system_prompt=system_prompt,
+                        user_message=user_message,
+                        use_cache=is_claude and self.settings.USE_PROMPT_CACHE,
+                    ),
                     "max_tokens": 512,
                     "temperature": 0.0,
                     "response_format": {"type": "json_object"},
+                    # Headers para prompt caching (solo Claude)
+                    **({"extra_headers": ANTHROPIC_CACHE_HEADER} if is_claude else {}),
                 }
             )
 
+            # Registrar la solicitud en el tracker de rate limits
+            self._rate_tracker.record_request("openrouter", success=response.status_code == 200)
+
             if response.status_code == 200:
                 data = response.json()
-                return self._parse_extract_response(data)
+                result = self._parse_extract_response(data)
+                self._record_llm_cost(model, data, result)
+                return result
 
             return {}
 
         except Exception as e:
             logger.error(f"Extract params LLM error: {e}")
+            self._rate_tracker.record_request("openrouter", success=False)
             return {}
 
     async def close(self) -> None:
@@ -275,12 +325,97 @@ class LLMClient:
     # Private methods
     # -------------------------------------------------------------------------
 
+    def _build_cached_messages(
+        self,
+        system_prompt: str,
+        user_message: str,
+        use_cache: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """
+        Construir mensajes con soporte de prompt caching para Claude.
+
+        Para modelos Anthropic Claude, se añaden los marcadores
+        `cache_control: {"type": "ephemeral"}` que indican a Claude
+        qué contenido debe cachearse.
+
+        El sistema se cachea porque es contenido estático que se repite
+        en cada llamada (misma configuración, mismas reglas).
+
+        Los mensajes del usuario NO se cachean porque cambian en cada llamada.
+
+        Patrones de Hermes:
+        - System prompt: siempre cacheable (contenido estático)
+        - User messages: no cacheables (contenido dinámico)
+        - Cache breakpoint: marca el límite de lo que se cachea
+
+        Parámetros:
+            system_prompt: Prompt de sistema (se cachea si es Claude)
+            user_message: Prompt del usuario (no se cachea)
+            use_cache: Si está habilitado el caching
+
+        Retorna:
+            Lista de mensajes con cache_control donde aplica
+        """
+        if use_cache:
+            return [
+                {
+                    "role": "system",
+                    "content": system_prompt + CACHE_BREAKPOINT,
+                    "cache_control": {"type": "ephemeral"},
+                },
+                {"role": "user", "content": user_message},
+            ]
+        else:
+            return [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ]
+
+    def _record_llm_cost(
+        self,
+        model_name: str,
+        response_data: dict,
+        result: Dict[str, Any],
+    ) -> None:
+        """
+        Registrar el costo real de una llamada LLM basado en tokens usados.
+
+        Lee los usage stats de la respuesta de OpenRouter y calcula
+        el costo real usando los precios de pricing.py.
+
+        Parámetros:
+            model_name: Nombre del modelo usado
+            response_data: Respuesta completa de OpenRouter
+            result: Resultado parseado (para logging)
+        """
+        try:
+            usage = response_data.get("usage", {})
+            input_tokens = usage.get("prompt_tokens", 0)
+            output_tokens = usage.get("completion_tokens", 0)
+
+            if input_tokens > 0 and output_tokens > 0:
+                cost = calculate_cost(input_tokens, output_tokens, model_name)
+                logger.info(
+                    f"LLM usage: model={model_name}, "
+                    f"input_tokens={input_tokens}, output_tokens={output_tokens}, "
+                    f"cost_usd={cost:.6f}"
+                )
+            else:
+                logger.debug(
+                    f"LLM call completed but no usage data: model={model_name}"
+                )
+        except Exception as e:
+            logger.warning(f"Failed to record LLM cost: {e}")
+
     def _build_routing_system_prompt(self, tenant_id: str, history: Optional[List[dict]] = None) -> str:
         """
         Construir el prompt de sistema para la decisión de routing.
 
         Este prompt define las reglas de decisión de Ragnar usando
         los principios de SOUL.md como guía.
+
+        Este contenido se cachea en Claude (si está habilitado)
+        porque es estático y se repite en cada llamada.
         """
         base = (
             "Ragnar es el orquestador principal de AI Platform. "
@@ -307,8 +442,18 @@ class LLMClient:
             '  "confidence": 0.0 - 1.0,\n'
             '  "reasoning": "why this module was chosen",\n'
             '  "needs_decomposition": false\n'
-            "}\n"
+            "}\n\n"
         )
+
+        # Incluir herramientas MCP en el prompt
+        try:
+            mcp_client = get_mcp_client()
+            tool_schemas = mcp_client.get_tool_schemas()
+            if tool_schemas:
+                base += "\n".join(tool_schemas) + "\n"
+        except Exception as e:
+            logger.warning(f"Failed to include MCP tools in routing prompt: {e}")
+
 
         if history:
             context = "Contexto de conversación relevante:\n"

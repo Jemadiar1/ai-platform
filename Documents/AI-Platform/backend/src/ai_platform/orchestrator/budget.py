@@ -292,3 +292,20 @@ class BudgetTracker:
         """Limpiar recursos."""
         self._active_tasks.clear()
         self._tenant_totals.clear()
+
+
+# Instancia global
+_budget_tracker: Optional[BudgetTracker] = None
+
+
+def get_budget_tracker() -> BudgetTracker:
+    """
+    Obtener el gestor de presupuesto (singleton).
+
+    Retorna:
+        Instancia de BudgetTracker
+    """
+    global _budget_tracker
+    if _budget_tracker is None:
+        _budget_tracker = BudgetTracker()
+    return _budget_tracker

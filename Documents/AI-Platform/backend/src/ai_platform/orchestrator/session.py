@@ -9,6 +9,7 @@ Patrones implementados:
 - Session Lineage: sesiones con parent_session_id para tracking de subagentes
 - FTS5 Search: búsqueda completa sobre mensajes de sesión
 - WAL Mode: concurrent readers + single writer sin contentions
+- Context Compression: compresión progresiva de historial largo
 
 Modelos de DB necesarios (se agregan en db.py):
 - sessions: metadata de sesión
@@ -25,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from ai_platform.database import make_session
 from ai_platform.core.config import get_settings
+from ai_platform.orchestrator.memory import get_context_reference_manager
 
 logger = logging.getLogger(__name__)
 
@@ -254,6 +256,83 @@ class SessionManager:
                 "token_count": result.token_count,
             }
 
+    async def get_messages(
+        self,
+        session_id: str,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """
+        Obtener todos los mensajes de una sesión.
+
+        Parámetros:
+            session_id: ID de la sesión
+            limit: Máximo de mensajes a retornar
+
+        Retorna:
+            Lista de dicts con role, content, created_at, id
+        """
+        with make_session() as db:
+            result = db.execute(
+                text("""
+                    SELECT id, role, content, created_at, token_count
+                    FROM messages
+                    WHERE session_id = :session_id
+                    ORDER BY created_at ASC
+                    LIMIT :limit
+                """),
+                {"session_id": session_id, "limit": limit},
+            ).fetchall()
+
+            return [
+                {
+                    "id": row.id,
+                    "role": row.role,
+                    "content": row.content or "",
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                    "token_count": row.token_count,
+                }
+                for row in result
+            ]
+
+    async def reset_session(self, session_id: str) -> None:
+        """
+        Resetear completamente una sesión (limpiar mensajes y memoria).
+
+        Elimina todos los mensajes y restablece contadores.
+        La sesión permanece activa pero sin historial.
+
+        Parámetros:
+            session_id: ID de la sesión a resetear
+        """
+        with make_session() as db:
+            db.execute(
+                text("""
+                    DELETE FROM messages WHERE session_id = :session_id
+                """),
+                {"session_id": session_id},
+            )
+            db.execute(
+                text("""
+                    UPDATE sessions
+                    SET message_count = 0, token_count = 0
+                    WHERE id = :session_id
+                """),
+                {"session_id": session_id},
+            )
+            db.commit()
+
+    async def clear_history(self, session_id: str) -> None:
+        """
+        Limpiar el historial de mensajes (mantener sesión activa).
+
+        Similar a reset_session pero específicamente enfocado en
+        limpiar el historial de conversación.
+
+        Parámetros:
+            session_id: ID de la sesión
+        """
+        await self.reset_session(session_id)
+
     async def get_context(self, session_id: str) -> Dict[str, Any]:
         """
         Obtener contexto de sesión (frozen snapshot pattern).
@@ -262,6 +341,7 @@ class SessionManager:
         - Lee los últimos mensajes una sola vez al inicio de la sesión
         - El snapshot se mantiene estable durante toda la conversación
         - Esto preserva el prefix cache del LLM
+        - Si el número de mensajes excede el threshold, aplica compresión
 
         Parámetros:
             session_id: ID de la sesión
@@ -271,6 +351,8 @@ class SessionManager:
                 - recent_messages: lista de los últimos N mensajes
                 - session_info: metadata de la sesión
                 - token_estimate: tokens estimados en contexto
+                - cross_session_context: contexto de sesiones anteriores
+                - compressed_history: info de compresión si se aplicó
         """
         with make_session() as db:
             # Obtener últimos mensajes
@@ -309,10 +391,50 @@ class SessionManager:
                     "token_count": result.token_count,
                 }
 
+            # Obtener contexto de sesiones anteriores (cross-session)
+            context_ref = get_context_reference_manager()
+            try:
+                cross_session_context = await context_ref.get_session_context(
+                    new_session_id=session_id,
+                    tenant_id=session_info.get("tenant_id", ""),
+                    limit=3,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to get cross-session context: {e}")
+                cross_session_context = []
+
+            # Obtener TODOS los mensajes para verificar si necesita compresión
+            all_messages_result = db.execute(
+                text("""
+                    SELECT role, content, created_at
+                    FROM messages
+                    WHERE session_id = :session_id
+                    ORDER BY created_at ASC
+                """),
+                {"session_id": session_id},
+            ).fetchall()
+
+            all_messages = []
+            for msg in all_messages_result:
+                all_messages.append({
+                    "role": msg.role,
+                    "content": msg.content or "",
+                    "created_at": msg.created_at.isoformat() if msg.created_at else None,
+                })
+
+            # Aplicar compresión si se excede el threshold
+            compressor = ContextCompressor()
+            compression_result = await compressor.compress_session(
+                session_id=session_id,
+                messages=all_messages,
+            )
+
             return {
                 "recent_messages": recent_messages,
                 "session_info": session_info,
-                "token_estimate": len(recent_messages) * 150,  # Estimación aproximada
+                "token_estimate": len(recent_messages) * 150,
+                "cross_session_context": cross_session_context,
+                "compressed_history": compression_result if compression_result.get("compressed") else None,
             }
 
     async def add_message(
@@ -472,6 +594,152 @@ class SessionManager:
     async def close(self) -> None:
         """Cerrar recursos."""
         pass
+
+
+# ========================================================================
+# Context Compression (Hermes Agent pattern)
+# ========================================================================
+
+
+class ContextCompressor:
+    """
+    Comprime el contexto de una sesión para reducir tokens.
+
+    Inspirado en Hermes Agent: compresión de historial de conversación
+    usando extracción de puntos clave y eliminación de redundancia.
+
+    Patrón de Hermes: compresión progresiva que mantiene solo
+    los puntos clave de la conversación.
+
+    Estrategia:
+    1. Si hay <= compression_threshold mensajes: no comprimir
+    2. Si hay > compression_threshold: compresión con LLM o fallback
+    3. Mantener últimos max_message_count mensajes sin comprimir
+    """
+
+    def __init__(self, llm_client=None):
+        self.llm_client = llm_client  # Para compresión con LLM
+        self.max_message_count = 10  # Mantener últimas N mensajes sin comprimir
+        self.compression_threshold = 50  # Después de 50 mensajes, comprimir
+
+    async def compress_session(
+        self,
+        session_id: str,
+        messages: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """
+        Compresión inteligente usando LLM si hay más de N mensajes.
+
+        Parámetros:
+            session_id: ID de la sesión
+            messages: Lista completa de mensajes de la sesión
+
+        Retorna:
+            Dict con:
+                - compressed: bool indicando si se aplicó compresión
+                - messages: lista de mensajes comprimidos
+                - original_count: número original de mensajes
+                - compressed_count: número después de compresión
+        """
+        if len(messages) <= self.compression_threshold:
+            return {"compressed": False, "messages": messages}
+
+        # Agrupar mensajes en bloques por rol
+        blocks = self._group_by_role(messages)
+
+        # Llamar a LLM para compresión si disponible
+        try:
+            compressed = await self._compress_with_llm(blocks)
+        except Exception as e:
+            logger.warning(f"LLM compression failed: {e}, using fallback")
+            compressed = self._simple_compress(blocks)
+
+        # Mantener últimos mensajes sin comprimir
+        recent = messages[-self.max_message_count:]
+        all_messages = compressed + recent
+
+        return {
+            "compressed": True,
+            "original_count": len(messages),
+            "compressed_count": len(all_messages),
+            "messages": all_messages,
+        }
+
+    async def _compress_with_llm(self, blocks: List[Dict]) -> List[Dict]:
+        """
+        Comprimir con LLM llamando a un modelo rápido y barato.
+
+        Parámetros:
+            blocks: Bloques de mensajes agrupados por rol
+
+        Retorna:
+            Lista con el resumen como mensaje de sistema
+        """
+        if not self.llm_client:
+            return self._simple_compress(blocks)
+
+        try:
+            from ai_platform.orchestrator.llm_client import ROUTING_MODELS
+            response = await self.llm_client.client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": ROUTING_MODELS["fast"],
+                    "messages": [
+                        {"role": "system", "content": "Resumir la conversación manteniendo los puntos clave. Responder en formato JSON con 'summary'."},
+                        {"role": "user", "content": json.dumps(blocks)},
+                    ],
+                    "max_tokens": 1024,
+                    "temperature": 0.1,
+                    "response_format": {"type": "json_object"},
+                }
+            )
+            result = response.json()
+            summary = result["choices"][0]["message"]["content"]
+            return [
+                {"role": "assistant", "content": f"[RESUMEN]: {summary}"}
+            ]
+        except Exception:
+            return self._simple_compress(blocks)
+
+    def _simple_compress(self, blocks: List[Dict]) -> List[Dict]:
+        """
+        Compresión simple: toma resumen por rol.
+
+        Fallback cuando no hay LLM disponible o falla.
+
+        Parámetros:
+            blocks: Bloques de mensajes agrupados
+
+        Retorna:
+            Lista con un solo mensaje de resumen
+        """
+        return [{
+            "role": "assistant",
+            "content": f"[Resumen: {len(blocks)-1} mensajes anteriores omitidos]"
+        }]
+
+    def _group_by_role(self, messages: List[Dict]) -> List[Dict]:
+        """
+        Agrupar mensajes por rol para compresión eficiente.
+
+        Parámetros:
+            messages: Lista completa de mensajes
+
+        Retorna:
+            Lista de dicts con resúmenes por rol
+        """
+        user_msgs = [m for m in messages if m.get("role") == "user"]
+        assistant_msgs = [m for m in messages if m.get("role") == "assistant"]
+        return [
+            {
+                "role": "user_summary",
+                "content": "\n".join(m.get("content", "")[:200] for m in user_msgs[-10:])
+            },
+            {
+                "role": "assistant_summary",
+                "content": "\n".join(m.get("content", "")[:200] for m in assistant_msgs[-10:])
+            },
+        ]
 
 
 # Instancia global

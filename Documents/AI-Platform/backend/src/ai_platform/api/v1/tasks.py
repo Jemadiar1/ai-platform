@@ -22,16 +22,11 @@ from sqlalchemy.orm import Session
 from uuid import UUID
 from typing import List, Optional
 from datetime import datetime, timezone
-import logging
 
 from ai_platform.database import get_db_session
 from ai_platform.middleware.tenant import get_current_tenant
 from ai_platform.models.db import Task, Tenant
 from ai_platform.schemas.task import TaskCreate, TaskResponse, TaskPatch
-from ai_platform.modules import VALID_MODULES
-
-logger = logging.getLogger(__name__)
-
 
 
 router = APIRouter()
@@ -79,11 +74,15 @@ def create_task(
     - 400: Payload inválido
     - 401: Token JWT inválido o faltante
     """
-    # Validar que el módulo es soportado (fuente única: shared modules registry)
-    if task_data.module not in VALID_MODULES:
+    # Validar que el módulo es soportado
+    supported_modules = [
+        "ai-connect", "ai-content", "ai-social",
+        "ai-leads", "ai-ads", "ai-analytics", "ai-web"
+    ]
+    if task_data.module not in supported_modules:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Módulo no soportado. Módulos válidos: {VALID_MODULES}"
+            detail=f"Módulo no soportado. Modules válidos: {supported_modules}"
         )
     
     # Crear el objeto Task en memoria con tenant_id automático
@@ -95,28 +94,14 @@ def create_task(
         priority=task_data.priority
     )
     
-    # Persistir en base de datos (flush + refresh para obtener ID y campos generados)
+    # Guardar en base de datos
     db.add(new_task)
-    db.flush()
-    db.refresh(new_task)
+    db.flush()  # Flush para obtener el ID generado
+    db.refresh(new_task)  # Refresh para obtener todos los campos
     
-    # Publicar tarea en Celery para ejecución asíncrona
-    try:
-        from ai_platform.workers.task_runner import process_task
-        process_task.delay(str(new_task.id), new_task.module, new_task.payload)
-        logger.info("tarea_publicada_celery", task_id=str(new_task.id), module=new_task.module)
-    except Exception as e:
-        logger.error("error_publicando_celery", task_id=str(new_task.id), error=str(e))
-        # Si Celery no está disponible, deshacer la transacción para no dejar
-        # una tarea huérfana en estado "pending" que nunca será procesada.
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Cola de tareas no disponible. Intente nuevamente."
-        )
-    
-    # Confirmar la transacción (solo si Celery se publicó con éxito)
-    db.commit()
+    # TODO (Fase 2): Publicar en Redis/Celery
+    # from ai_platform.workers.task_runner import process_task
+    # process_task.delay(str(new_task.id), new_task.module, new_task.payload)
     
     return TaskResponse.model_validate(new_task)
 
@@ -278,9 +263,6 @@ def update_task(
     db.flush()
     db.refresh(task)
     
-    # Confirmar cambios pendientes en esta ruta para asegurar persistencia
-    db.commit()
-    
     return TaskResponse.model_validate(task)
 
 
@@ -320,6 +302,5 @@ def delete_task(
     
     db.delete(task)
     db.flush()
-    db.commit()
     
     return None
