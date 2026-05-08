@@ -33,12 +33,13 @@ from celery import Celery
 from celery.utils.log import get_task_logger
 from datetime import datetime, timezone
 from typing import Any
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 # Importar dependencias del proyecto
 from ai_platform.database import session_factory
 from ai_platform.models.db import Task, UsageEvent
 from ai_platform.core.config import get_settings
+from ai_platform.modules import VALID_MODULES, MODULE_HANDLERS
 
 logger = get_task_logger("ai_platform.task_runner")
 
@@ -69,7 +70,7 @@ celery_app.conf.update(
     task_track_started=True,
     
     # === Backoff exponencial ===
-    # Primer retry: 60seg, Segundo: 120seg, Tercero: 240seg
+    # Primer retry: 60s, Segundo: 120s, Tercero: 240s
     task_default_retry_delay=60,
     task_max_retries=3,
     task_retry_backoff=True,
@@ -189,12 +190,13 @@ def process_task(self, task_id: str, module: str, payload: dict) -> dict:
     
     Flujo de ejecución:
     1. Recibe la tarea de la cola Redis
-    2. Guarda status = "running" en la base de datos
-    3. Importa dinámicamente el handler del módulo correcto
-    4. Ejecuta la lógica del módulo con el payload
-    5. Guarda status = "completed" + resultado
-    6. Registra usage para billing
-    7. Devuelve el resultado
+    2. Valida idempotencia: si ya está completada o fallida, retorna de inmediato
+    3. Guarda status = "running" en la base de datos
+    4. Importa dinámicamente el handler del módulo correcto
+    5. Ejecuta la lógica del módulo con el payload
+    6. Guarda status = "completed" + resultado
+    7. Registra usage_event SI y SOLO SI no existe ya (idempotencia de billing)
+    8. Devuelve el resultado
     
     Si cualquier paso falla → Celery reintentar (hasta 3 veces)
     Si falla 3 veces → dead letter (se archiva y se alerta al admin)
@@ -208,8 +210,34 @@ def process_task(self, task_id: str, module: str, payload: dict) -> dict:
         dict con el resultado de la ejecución
     """
     logger.info("task_started", task_id=task_id, module=module)
-    
+
+    # ── Idempotencia: si la tarea ya se procesó, no hacer nada ──────────
+    # Esto previene que los reintentos de Celery dupliquen el billing
+    # o re-ejecuten handlers con efectos secundarios.
+    task_session = session_factory()
     try:
+        task_query = select(Task).where(Task.id == task_id)
+        task_result = task_session.execute(task_query)
+        existing_task = task_result.scalar_one_or_none()
+        if existing_task and existing_task.status in ("completed", "failed"):
+            logger.info(
+                "tarea_ya_procésada_skip",
+                task_id=task_id,
+                status=existing_task.status,
+            )
+            return existing_task.result if isinstance(existing_task.result, dict) else {"status": "ok", "data": str(existing_task.result)}
+    except Exception as e:
+        logger.error("error_verificando_idempotencia", task_id=task_id, error=str(e))
+    finally:
+        task_session.close()
+
+    try:
+        # Validar módulo contra el registro centralizado
+        if module not in VALID_MODULES:
+            raise ValueError(
+                f"Módulo no soportado: {module}. Módulos válidos: {VALID_MODULES}"
+            )
+
         # Paso 1: Cambiar status a "running"
         save_task_update(task_id, {
             "status": "running",
@@ -219,21 +247,7 @@ def process_task(self, task_id: str, module: str, payload: dict) -> dict:
         # Paso 2: Importar el handler del módulo correcto
         # Los módulos de IA están en ai_platform.modules.<module>.handler
         # Esto carga dinámicamente solo el módulo que necesitamos
-        module_handlers = {
-            "ai-connect": "ai_platform.modules.ai_connect.handler",
-            "ai-content": "ai_platform.modules.ai_content.handler",
-            "ai-social": "ai_platform.modules.ai_social.handler",
-            "ai-leads": "ai_platform.modules.ai_leads.handler",
-            "ai-ads": "ai_platform.modules.ai_ads.handler",
-            "ai-analytics": "ai_platform.modules.ai_analytics.handler",
-            "ai-web": "ai_platform.modules.ai_web.handler",
-        }
-        
-        if module not in module_handlers:
-            raise ValueError(f"Módulo no soportado: {module}. Módulos válidos: {list(module_handlers.keys())}")
-        
-        # Cargar el handler dinámicamente
-        handler_path = module_handlers[module]
+        handler_path = MODULE_HANDLERS[module]
         import importlib
         handler_module = importlib.import_module(handler_path)
         handler = handler_module.Handler()
@@ -249,8 +263,54 @@ def process_task(self, task_id: str, module: str, payload: dict) -> dict:
             "completed_at": datetime.now(timezone.utc)
         })
         
-        # Paso 5: Registrar uso para billing
-        # TODO: Obtener tenant_id real de la tarea
+        # Paso 5: Obtener tenant_id y registrar uso para billing
+        task_tenant_id = None
+        try:
+            task_session = session_factory()
+            try:
+                task_query = select(Task).where(Task.id == task_id)
+                task_result = task_session.execute(task_query)
+                task_record = task_result.scalar_one_or_none()
+                if task_record:
+                    task_tenant_id = task_record.tenant_id
+                    logger.info("tenant_id_obtenido", task_id=task_id, tenant_id=str(task_tenant_id))
+                else:
+                    logger.warning("tarea_no_encontrada_para_billing", task_id=task_id)
+            finally:
+                task_session.close()
+        except Exception as e:
+            logger.error("error_obteniendo_tenant_para_billing", task_id=task_id, error=str(e))
+        
+        if task_tenant_id:
+            # Verificar idempotencia: si ya existe un usage_event para esta
+            # tarea + event_type, skip para evitar doble billing en retries.
+            check_session = session_factory()
+            try:
+                existing_event = check_session.execute(
+                    text(
+                        "SELECT id FROM usage_events "
+                        "WHERE task_id = :task_id AND event_type = :event_type LIMIT 1"
+                    ),
+                    {"task_id": task_id, "event_type": "task_execution"}
+                ).first()
+                if existing_event:
+                    logger.info(
+                        "usage_event_already_existente",
+                        task_id=task_id,
+                    )
+                else:
+                    save_usage_event(
+                        tenant_id=str(task_tenant_id),
+                        module=module,
+                        event_type="task_execution",
+                        tokens=0,
+                        cost=0.0,
+                        task_id=task_id,
+                    )
+                    logger.info("usage_event_registrado", task_id=task_id, tenant_id=str(task_tenant_id), module=module)
+            finally:
+                check_session.close()
+        
         logger.info("task_completed", task_id=task_id, module=module)
         return result if isinstance(result, dict) else {"status": "ok", "data": result}
     

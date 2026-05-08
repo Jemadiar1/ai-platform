@@ -18,6 +18,8 @@ Uso:
     # decision = {module, action, params, confidence, ...}
 """
 
+import asyncio
+import importlib
 import json
 import logging
 from typing import Optional, Dict, Any, List
@@ -29,6 +31,7 @@ from ai_platform.orchestrator.skills import SkillManager
 from ai_platform.orchestrator.budget import BudgetTracker
 from ai_platform.orchestrator.observability import DecisionLogger
 from ai_platform.core.security import scanner, prompt_sanitizer
+from ai_platform.modules import MODULE_HANDLERS, VALID_MODULES
 
 logger = logging.getLogger(__name__)
 
@@ -102,9 +105,9 @@ class Ragnar:
         scan_result = scanner.scan(prompt)
         if not scan_result["is_safe"]:
             logger.warning(
-                f"Injection patterns detected in prompt from user. "
-                f"Patterns: {scan_result['flagged_patterns']}. "
-                "Using sanitized version."
+                f"Se detectaron patrones de inyección en el prompt de un usuario. "
+                f"Patrones: {scan_result['flagged_patterns']}. "
+                "Usando versión sanitizada."
             )
             prompt = scanner.sanitize(prompt)
 
@@ -202,27 +205,27 @@ class Ragnar:
             Dict con resultado de la ejecución
         """
         module = decision["module"]
-        params = decision["params"]
 
         if module == "uncategorized":
             return {
                 "module": "uncategorized",
                 "status": "failed",
                 "result": {
-                    "error": "No module matched the user prompt.",
-                    "message": "Please rephrase your request.",
+                    "error": "Ningún módulo coincidió con el prompt del usuario.",
+                    "message": "Por favor, reformule su solicitud.",
                 },
             }
 
         # Inyectar contexto en la payload
-        enriched_payload = self._enrich_payload(params, decision)
+        enriched_payload = self._enrich_payload(decision)
 
         # Tracking de budget
         await self.budget_tracker.begin_task(task_id, tenant_id, module)
 
         try:
-            # Simular ejecución del módulo
-            # En producción, esto invocará al handler del módulo
+            # Invocar el handler del módulo seleccionado
+            # Las excepciones se propagan al except para corregir
+            # el estado de budget y retornar un error estructurado.
             result = await self._invoke_module(module, enriched_payload)
 
             await self.budget_tracker.end_task(task_id, module, success=True)
@@ -241,8 +244,14 @@ class Ragnar:
             }
 
         except Exception as e:
+            # Cuando _invoke_module lanza, el budget se marca como fallo
+            # y se retorna un error estructurado (no double-wrapped).
             await self.budget_tracker.end_task(task_id, module, success=False, error=str(e))
-            raise
+            return {
+                "module": module,
+                "status": "failed",
+                "result": {"error": str(e)},
+            }
 
     async def close(self) -> None:
         """Cerrar todos los recursos."""
@@ -256,16 +265,34 @@ class Ragnar:
     # Private methods
     # -------------------------------------------------------------------------
 
-    def _enrich_payload(self, params: Dict[str, Any], decision: Dict[str, Any]) -> Dict[str, Any]:
+    def _enrich_payload(self, decision: Dict[str, Any]) -> Dict[str, Any]:
         """
         Enriquecer la payload con contexto de sesión y memoria.
 
         Esto aplica el principio de memoria congelada de Hermes:
         inyectar el contexto una vez al inicio y mantenerlo estable
         durante la sesión.
+
+        Valida que tenant_id esté presente. Si no lo está, lanza
+        ValueError para evitar propagar None silenciosamente.
+
+        Parámetros:
+            decision: Dict retornado por decide()
+
+        Retorna:
+            Dict enriquecido con tenant_id, session_context y/or memory_context.
+
+        Raises:
+            ValueError: Si no se puede obtener tenant_id de la decisión.
         """
-        enriched = {**params}
-        enriched["tenant_id"] = decision.get("session_context", {}).get("tenant_id")
+        # Extraer tenant_id del contexto de sesión con validación estricta
+        tenant_id = decision.get("session_context", {}).get("tenant_id")
+        if not tenant_id:
+            raise ValueError(
+                "tenant_id must be propagated through enriched payload"
+            )
+
+        enriched = {"tenant_id": tenant_id}
 
         # Inyectar contextos si disponibles
         if "session_context" in decision:
@@ -284,19 +311,48 @@ class Ragnar:
         """
         Invocar al handler del módulo seleccionado.
 
-        En esta fase inicial, retorna un placeholder.
-        En producción, importará dinámicamente el handler del módulo.
-        """
-        # TODO: Importación dinámica del handler
-        # from ai_platform.modules.ai_connect.handler import execute
-        # result = await execute(payload)
+        Mapea nombres de módulo (ej: "ai-connect") al handler correspondiente
+        usando el registro centralizado (MODULE_HANDLERS). Importa la clase
+        Handler, instancia y ejecuta Handler().execute(payload) de forma
+        asíncrona vía to_thread.
 
-        return {
-            "module": module,
-            "status": "completed",
-            "message": f"Module {module} executed successfully.",
-            "payload": payload,
-        }
+        Las excepciones se propagan al caller (execute) para que se pueda
+        corregir el estado del budget_tracker y retornar un error estructurado.
+
+        Parámetros:
+            module: Nombre del módulo a invocar (ej: "ai-connect").
+            payload: Payload enriquecido con contexto.
+
+        Retorna:
+            Dict con el resultado del handler.
+
+        Raises:
+            ImportError: Si el módulo no se puede importar.
+            AttributeError: Si no hay clase Handler en el módulo.
+            Exception: Cualquier otro error durante la ejecución.
+        """
+        handler_path = MODULE_HANDLERS.get(module)
+        if not handler_path:
+            logger.warning("Módulo no registrado: %s", module)
+            raise ValueError(
+                f"Módulo no soportado: {module}. Módulos válidos: {VALID_MODULES}"
+            )
+
+        # Importar el módulo del handler dinámicamente
+        handler_module = importlib.import_module(handler_path)
+        handler_class = getattr(handler_module, "Handler", None)
+        if handler_class is None:
+            raise AttributeError(
+                f"No se encontró la clase Handler en {handler_path}"
+            )
+
+        handler_instance = handler_class()
+
+        # El execute es síncrono, ejecutar en thread para no bloquear el event loop
+        result = await asyncio.to_thread(handler_instance.execute, payload)
+
+        logger.info("módulo_ejecutado", module=module)
+        return result
 
 
 # Instancia global
