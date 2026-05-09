@@ -83,6 +83,14 @@ class Settings(BaseSettings):
     # === WhatsApp API ===
     WHATSAPP_PHONE_NUMBER_ID: Optional[str] = None
     WHATSAPP_ACCESS_TOKEN: Optional[str] = None
+    WHATSAPP_WEBHOOK_VERIFY_TOKEN: Optional[str] = None
+    
+    # === Telegram API ===
+    TELEGRAM_BOT_TOKEN: Optional[str] = None
+    
+    # === Discord API ===
+    DISCORD_BOT_TOKEN: Optional[str] = None
+    DISCORD_CHANNEL_ID: Optional[str] = None
     
     # === Vapi.ai (Voz IA) ===
     VAPI_API_KEY: Optional[str] = None
