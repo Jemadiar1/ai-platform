@@ -129,3 +129,48 @@ def sample_task(db_session, sample_tenant):
     db_session.commit()
     db_session.refresh(task)
     return task
+
+
+@pytest.fixture
+def valid_password():
+    """Contraseña válida de prueba."""
+    return "TestPass123!"
+
+
+@pytest.fixture
+def hashed_password():
+    """Contraseña hasheada de prueba."""
+    from passlib.context import CryptContext
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    return pwd_context.hash("TestPass123!")
+
+
+@pytest.fixture
+def test_tenant_id():
+    """UUID de tenant para pruebas."""
+    from uuid import uuid4
+    return str(uuid4())
+
+
+@pytest.fixture
+def sample_safe_text():
+    """Texto seguro para pruebas de escaneo."""
+    return "Este es un mensaje seguro y normal sin contenido malicioso"
+
+
+@pytest.fixture
+def sample_injection_text():
+    """Texto con intento de inyección SQL."""
+    return "Hola; DROP TABLE users; --"
+
+
+@pytest.fixture
+def sample_bidi_text():
+    """Texto con caracteres bidireccionales."""
+    return "Hola\u202Emundo\u202C"
+
+
+@pytest.fixture
+def sample_null_bytes():
+    """Texto con bytes nulos incrustados."""
+    return "Hola\x00mundo\x00"

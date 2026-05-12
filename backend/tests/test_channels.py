@@ -521,16 +521,16 @@ class TestMessageChunking:
     def test_chunk_message_short_text(self):
         """Texto corto no debe dividirse."""
         from ai_platform.channels.base import BaseChannel
-        channel = BaseChannel  # tipo para type hints
-        # _chunk_message es método de BaseChannel
-        chunks = BaseChannel._chunk_message(None, "Hola", 20)  # type: ignore
+        channel = BaseChannel()
+        chunks = channel._chunk_message("Hola", 20)
         assert chunks == ["Hola"]
 
     def test_chunk_message_respects_word_boundaries(self):
         """Debe respetar límites de palabra al dividir."""
         from ai_platform.channels.base import BaseChannel
+        channel = BaseChannel()
         text = "Esta es una prueba de chunking que debe respetar límites de palabra"
-        chunks = BaseChannel._chunk_message(None, text, 20)  # type: ignore
+        chunks = channel._chunk_message(text, 20)
         assert len(chunks) > 1
         for chunk in chunks:
             assert len(chunk) <= 20 or chunk.endswith(" ")
@@ -538,14 +538,16 @@ class TestMessageChunking:
     def test_chunk_message_very_long(self):
         """Texto muy largo debe dividirse en múltiple chunk."""
         from ai_platform.channels.base import BaseChannel
+        channel = BaseChannel()
         long_text = "A " * 500  # ~1000 chars
-        chunks = BaseChannel._chunk_message(None, long_text, 50)  # type: ignore
+        chunks = channel._chunk_message(long_text, 50)
         assert len(chunks) > 1
 
     def test_chunk_message_empty(self):
         """Texto vacío debe retornar lista vacía."""
         from ai_platform.channels.base import BaseChannel
-        chunks = BaseChannel._chunk_message(None, "", 100)  # type: ignore
+        channel = BaseChannel()
+        chunks = channel._chunk_message("", 100)
         assert chunks == [""]
 
     def test_telegram_chunk_max_4096(self):

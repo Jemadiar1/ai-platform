@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from uuid import UUID
-from typing import List, Optional
+from typing import List, Optional, Dict, Any, Union
 from datetime import datetime, timezone
 
 from ai_platform.database import get_db_session
@@ -41,9 +41,9 @@ router = APIRouter()
 )
 def create_task(
     task_data: TaskCreate,
-    tenant: Tenant = Depends(get_current_tenant),  # Extraer tenant del JWT
-    db: Session = Depends(get_db_session),    # Obtener sesión de BD
-):
+    tenant: Tenant = Depends(get_current_tenant),
+    db: Session = Depends(get_db_session),
+) -> Dict[str, Any]:
     """
     Crear una nueva tarea para el módulo de IA.
     

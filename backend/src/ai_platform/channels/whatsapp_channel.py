@@ -355,8 +355,8 @@ class WhatsAppChannel(BaseChannel):
             logger.error(f"Error inesperado enviando WhatsApp: {e}")
             return {"status": "error", "message": str(e)}
 
-    @staticmethod
     async def verify_webhook_challenge(
+        self,
         mode: str,
         token: str,
         challenge: str,

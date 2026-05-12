@@ -25,6 +25,7 @@ from fastapi import APIRouter, Request, HTTPException, status
 import hmac
 import hashlib
 import json
+import logging
 from datetime import datetime, timezone
 
 from ai_platform.database import session_factory

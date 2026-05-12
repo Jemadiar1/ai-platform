@@ -10,6 +10,8 @@ Estos endpoints se usan para:
 Cada endpoint debe devolver 200 OK con un JSON simple.
 """
 
+from typing import Any, Dict
+
 from fastapi import APIRouter
 from datetime import datetime, timezone
 from sqlalchemy import text
@@ -23,7 +25,7 @@ router = APIRouter()
     description="Endpoint más simple para verificar que la API está viva",
     response_description="Mensaje de respuesta",
 )
-def ping():
+def ping() -> Dict[str, Any]:
     """
     Endpoint de ping básico.
     
@@ -49,7 +51,7 @@ def ping():
     description="Verifica que la API y sus dependencias (BD) están operativas",
     response_description="Estado de cada componente",
 )
-def health_check():
+def health_check() -> Dict[str, Any]:
     """
     Health check completo.
     

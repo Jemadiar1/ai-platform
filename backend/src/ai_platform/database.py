@@ -15,8 +15,10 @@ La versión "binary" ya viene compilada, no necesita C compiler en Windows.
 - Todo lo demás es igual: model, query, CRUD
 """
 
+from typing import Generator
+
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from sqlalchemy.orm import sessionmaker, DeclarativeBase, Session
 from ai_platform.core.config import get_settings
 
 settings = get_settings()
@@ -52,7 +54,7 @@ class Base(DeclarativeBase):
     pass
 
 
-def get_db_session():
+def get_db_session() -> Generator[Session, None, None]:
     """
     Dependency de FastAPI para obtener una sesión de base de datos.
     
@@ -77,7 +79,7 @@ def get_db_session():
         session.close()
 
 
-def make_session():
+def make_session() -> Generator[Session, None, None]:
     """
     Crear manualmente una sesión de BD (para usar fuera de FastAPI).
     
