@@ -25,7 +25,6 @@ Modos de operación:
     - Desarrollo: Validar tokens localmente (sin necesidad de Clerk)
 """
 
-
 import httpx
 from fastapi import HTTPException, Request, status
 

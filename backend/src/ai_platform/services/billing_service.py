@@ -29,7 +29,6 @@ Flujo de integración:
     5. Mostramos el plan actual en el dashboard
 """
 
-
 import httpx
 from fastapi import HTTPException, status
 
@@ -117,7 +116,9 @@ class BillingService:
                         status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Stripe error: {response.text}"
                     )
         except httpx.HTTPError:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Error al conectar con Stripe") from None
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY, detail="Error al conectar con Stripe"
+            ) from None
 
     async def handle_webhook(self, payload: bytes, signature: str) -> dict:
         """

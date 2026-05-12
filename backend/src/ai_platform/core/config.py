@@ -60,9 +60,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = Field(default="redis://localhost:6379/0", description="URL de conexión a Redis")
 
     # === Seguridad ===
-    SECRET_KEY: str | None = Field(
-        default=None, description="Clave secreta para firmar JWT (requerido en producción)"
-    )
+    SECRET_KEY: str | None = Field(default=None, description="Clave secreta para firmar JWT (requerido en producción)")
     JWT_EXPIRATION_HOURS: int = Field(default=24)
     JWT_ALGORITHM: str = Field(default="HS256")
 

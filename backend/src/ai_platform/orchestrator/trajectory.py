@@ -357,9 +357,7 @@ class TrajectoryManager:
                 steps = [Step.from_dict(s) for s in steps_data]
 
                 tags = json.loads(result.tags) if result.tags else []
-                started_at = (
-                    datetime.fromisoformat(result.started_at) if result.started_at else datetime.now(UTC)
-                )
+                started_at = datetime.fromisoformat(result.started_at) if result.started_at else datetime.now(UTC)
                 completed_at = datetime.fromisoformat(result.completed_at) if result.completed_at else None
 
                 trajectory = Trajectory(
