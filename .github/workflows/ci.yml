@@ -97,13 +97,14 @@ jobs:
         run: poetry install --with dev --no-interaction
 
       - name: Run tests with pytest
+        working-directory: ./backend
         env:
           DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/ai_platform_test
           OPENROUTER_API_KEY: test-key
           SECRET_KEY: test-secret-key-for-ci
           JWT_ALGORITHM: HS256
         run: |
-          poetry run pytest backend/tests/ -v --tb=short --ignore-glob="**/test_modules/*"
+          poetry run pytest tests/ -v --tb=short --ignore-glob="**/test_modules/*"
 
   build-and-push:
     name: Build and Push Docker Image
