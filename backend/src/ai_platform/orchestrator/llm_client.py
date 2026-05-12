@@ -16,15 +16,17 @@ Patrones de optimización:
 - Fallback routing si un modelo falla
 - Timeout de 30 segundos por decisión
 """
-import logging
-import json
-import httpx
-from typing import Dict, Any, List, Optional
-from ai_platform.core.config import get_settings
-from ai_platform.orchestrator.rate_limiter import get_rate_limit_tracker
-from ai_platform.orchestrator.pricing import calculate_cost
 
+import json
+import logging
+from typing import Any
+
+import httpx
+
+from ai_platform.core.config import get_settings
 from ai_platform.orchestrator.mcp import get_mcp_client
+from ai_platform.orchestrator.pricing import calculate_cost
+from ai_platform.orchestrator.rate_limiter import get_rate_limit_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +34,9 @@ settings = get_settings()
 
 # Modelos disponibles para decisiones de orquestación
 ROUTING_MODELS = {
-    "primary": "anthropic/claude-3.5-sonnet",      # Mejor para decisiones complejas
-    "fallback": "openai/gpt-4o-mini",                # Fallback más económico
-    "fast": "google/gemini-2.0-flash-exp:free",      # Modelo gratuito para testing
+    "primary": "anthropic/claude-3.5-sonnet",  # Mejor para decisiones complejas
+    "fallback": "openai/gpt-4o-mini",  # Fallback más económico
+    "fast": "google/gemini-2.0-flash-exp:free",  # Modelo gratuito para testing
 }
 
 # Timeout de 30 segundos por llamada LLM
@@ -43,9 +45,7 @@ LLM_TIMEOUT = 30.0
 # Headers para prompt caching de Claude
 # El header "anthropic-beta: prompt-caching-2024-07-31" habilita el caching
 # Solo funciona con modelos Anthropic Claude
-ANTHROPIC_CACHE_HEADER = {
-    "anthropic-beta": "prompt-caching-2024-07-31"
-}
+ANTHROPIC_CACHE_HEADER = {"anthropic-beta": "prompt-caching-2024-07-31"}
 
 # Marcador de punto de cacheo para Claude
 # Se coloca en el sistema para indicar dónde termina el contenido cacheable
@@ -71,24 +71,21 @@ class LLMClient:
     def __init__(self):
         self.settings = get_settings()
         self.client = httpx.AsyncClient(
-            base_url=self.settings.NAN_API_URL if self.settings.LLM_PROVIDER.lower() == 'nan' else self.settings.OPENROUTER_API_URL,
+            base_url=self.settings.NAN_API_URL
+            if self.settings.LLM_PROVIDER.lower() == "nan"
+            else self.settings.OPENROUTER_API_URL,
             headers={
                 "Authorization": f"Bearer {self.settings.NAN_API_KEY if self.settings.LLM_PROVIDER.lower() == 'nan' else self.settings.OPENROUTER_API_KEY}",
                 "Content-Type": "application/json",
                 "HTTP-Referer": "https://github.com/Jemadiar1/ai-platform",
                 "X-Title": "AI Platform - NeuralCrew Labs",
             },
-            timeout=LLM_TIMEOUT
+            timeout=LLM_TIMEOUT,
         )
         # Tracker de límites de tasa para rate limiting
         self._rate_tracker = get_rate_limit_tracker()
 
-    async def route_task(
-        self,
-        prompt: str,
-        tenant_id: str,
-        history: Optional[List[dict]] = None
-    ) -> Dict[str, Any]:
+    async def route_task(self, prompt: str, tenant_id: str, history: list[dict] | None = None) -> dict[str, Any]:
         """
         Decidir qué módulo debe ejecutar una tarea.
 
@@ -116,10 +113,7 @@ class LLMClient:
             RuntimeError: Si no hay API key configurada
         """
         if self.settings.LLM_PROVIDER.lower() == "openrouter" and not self.settings.OPENROUTER_API_KEY:
-            raise RuntimeError(
-                "OPENROUTER_API_KEY no está configurada. "
-                "Verifica tu .env."
-            )
+            raise RuntimeError("OPENROUTER_API_KEY no está configurada. Verifica tu .env.")
 
         # Construir el prompt de sistema para la decisión
         system_prompt = self._build_routing_system_prompt(tenant_id, history)
@@ -149,7 +143,7 @@ class LLMClient:
                     "response_format": {"type": "json_object"},
                     # Headers para prompt caching (solo Claude)
                     **({"extra_headers": ANTHROPIC_CACHE_HEADER} if is_claude else {}),
-                }
+                },
             )
 
             # Registrar la solicitud en el tracker de rate limits
@@ -163,8 +157,7 @@ class LLMClient:
                 return result
 
             logger.warning(
-                f"Routing LLM failed with status {response.status_code}. "
-                "Attempting fallback to gpt-4o-mini."
+                f"Routing LLM failed with status {response.status_code}. Attempting fallback to gpt-4o-mini."
             )
             return await self._route_with_fallback(prompt, tenant_id, history)
 
@@ -177,11 +170,7 @@ class LLMClient:
             self._rate_tracker.record_request("openrouter", success=False)
             return await self._route_with_fallback(prompt, tenant_id, history)
 
-    async def decompose_task(
-        self,
-        complex_prompt: str,
-        tenant_id: str
-    ) -> List[Dict[str, Any]]:
+    async def decompose_task(self, complex_prompt: str, tenant_id: str) -> list[dict[str, Any]]:
         """
         Descomponer una tarea compleja en subtasks.
 
@@ -201,10 +190,7 @@ class LLMClient:
             Lista de subtasks (cada una con module, action, params)
         """
         if self.settings.LLM_PROVIDER.lower() == "openrouter" and not self.settings.OPENROUTER_API_KEY:
-            raise RuntimeError(
-                "OPENROUTER_API_KEY no está configurada. "
-                "Verifica tu .env."
-            )
+            raise RuntimeError("OPENROUTER_API_KEY no está configurada. Verifica tu .env.")
 
         system_prompt = self._build_decompose_system_prompt(tenant_id)
         user_message = f"Decompone la siguiente tarea en pasos específicos:\n\n{complex_prompt}"
@@ -230,7 +216,7 @@ class LLMClient:
                     "response_format": {"type": "json_object"},
                     # Headers para prompt caching (solo Claude)
                     **({"extra_headers": ANTHROPIC_CACHE_HEADER} if is_claude else {}),
-                }
+                },
             )
 
             # Registrar la solicitud en el tracker de rate limits
@@ -250,12 +236,7 @@ class LLMClient:
             self._rate_tracker.record_request("openrouter", success=False)
             return await self._decompose_with_fallback(complex_prompt, tenant_id)
 
-    async def extract_params(
-        self,
-        prompt: str,
-        module: str,
-        action: str
-    ) -> Dict[str, Any]:
+    async def extract_params(self, prompt: str, module: str, action: str) -> dict[str, Any]:
         """
         Extraer parámetros relevantes de un input para un módulo específico.
 
@@ -274,10 +255,7 @@ class LLMClient:
             Dict con parámetros extraídos
         """
         if self.settings.LLM_PROVIDER.lower() == "openrouter" and not self.settings.OPENROUTER_API_KEY:
-            raise RuntimeError(
-                "OPENROUTER_API_KEY no está configurada. "
-                "Verifica tu .env."
-            )
+            raise RuntimeError("OPENROUTER_API_KEY no está configurada. Verifica tu .env.")
 
         system_prompt = self._build_extract_system_prompt(module, action)
         user_message = f"Extrae los parámetros relevantes de este input:\n\n{prompt}"
@@ -303,7 +281,7 @@ class LLMClient:
                     "response_format": {"type": "json_object"},
                     # Headers para prompt caching (solo Claude)
                     **({"extra_headers": ANTHROPIC_CACHE_HEADER} if is_claude else {}),
-                }
+                },
             )
 
             # Registrar la solicitud en el tracker de rate limits
@@ -335,7 +313,7 @@ class LLMClient:
         system_prompt: str,
         user_message: str,
         use_cache: bool = True,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Construir mensajes con soporte de prompt caching para Claude.
 
@@ -380,7 +358,7 @@ class LLMClient:
         self,
         model_name: str,
         response_data: dict,
-        result: Dict[str, Any],
+        result: dict[str, Any],
     ) -> None:
         """
         Registrar el costo real de una llamada LLM basado en tokens usados.
@@ -406,13 +384,11 @@ class LLMClient:
                     f"cost_usd={cost:.6f}"
                 )
             else:
-                logger.debug(
-                    f"LLM call completed but no usage data: model={model_name}"
-                )
+                logger.debug(f"LLM call completed but no usage data: model={model_name}")
         except Exception as e:
             logger.warning(f"Failed to record LLM cost: {e}")
 
-    def _build_routing_system_prompt(self, tenant_id: str, history: Optional[List[dict]] = None) -> str:
+    def _build_routing_system_prompt(self, tenant_id: str, history: list[dict] | None = None) -> str:
         """
         Construir el prompt de sistema para la decisión de routing.
 
@@ -459,7 +435,6 @@ class LLMClient:
         except Exception as e:
             logger.warning(f"Failed to include MCP tools in routing prompt: {e}")
 
-
         if history:
             context = "Contexto de conversación relevante:\n"
             for msg in history[-5:]:  # Últimos 5 mensajes para contexto
@@ -468,7 +443,7 @@ class LLMClient:
 
         return base
 
-    def _build_routing_user_prompt(self, prompt: str, history: Optional[List[dict]] = None) -> str:
+    def _build_routing_user_prompt(self, prompt: str, history: list[dict] | None = None) -> str:
         """
         Construir el prompt del usuario para routing.
         """
@@ -484,7 +459,7 @@ class LLMClient:
 
         return base
 
-    def _parse_routing_response(self, data: dict) -> Dict[str, Any]:
+    def _parse_routing_response(self, data: dict) -> dict[str, Any]:
         """
         Parsear la respuesta del LLM para routing.
         """
@@ -530,7 +505,7 @@ class LLMClient:
             "'depends_on' es el índice 0-based del paso que debe completarse antes.\n"
         )
 
-    def _parse_decompose_response(self, data: dict) -> List[Dict[str, Any]]:
+    def _parse_decompose_response(self, data: dict) -> list[dict[str, Any]]:
         """
         Parsear la respuesta del LLM para descomposición.
         """
@@ -553,7 +528,7 @@ class LLMClient:
             f"Responde SIEMPRE en formato JSON válido.\n"
         )
 
-    def _parse_extract_response(self, data: dict) -> Dict[str, Any]:
+    def _parse_extract_response(self, data: dict) -> dict[str, Any]:
         """
         Parsear la respuesta del LLM para extracción de parámetros.
         """
@@ -569,17 +544,14 @@ class LLMClient:
     # -------------------------------------------------------------------------
 
     async def _route_with_fallback(
-        self,
-        prompt: str,
-        tenant_id: str,
-        history: Optional[List[dict]] = None
-    ) -> Dict[str, Any]:
+        self, prompt: str, tenant_id: str, history: list[dict] | None = None
+    ) -> dict[str, Any]:
         """
         Fallback: routing basado en reglas simples si el LLM falla.
         """
         return self._rule_based_routing(prompt)
 
-    def _rule_based_routing(self, prompt: str) -> Dict[str, Any]:
+    def _rule_based_routing(self, prompt: str) -> dict[str, Any]:
         """
         Routing basado en palabras clave como fallback.
 
@@ -660,11 +632,7 @@ class LLMClient:
             "needs_decomposition": False,
         }
 
-    async def _decompose_with_fallback(
-        self,
-        prompt: str,
-        tenant_id: str
-    ) -> List[Dict[str, Any]]:
+    async def _decompose_with_fallback(self, prompt: str, tenant_id: str) -> list[dict[str, Any]]:
         """
         Fallback: descomposición basada en reglas simples.
         """

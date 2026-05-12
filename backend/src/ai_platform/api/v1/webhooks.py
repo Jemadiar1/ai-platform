@@ -52,7 +52,7 @@ def verify_clerk_signature(payload: bytes, signature: str) -> bool:
     webhook_secret = os.environ.get("CLERK_WEBHOOK_SECRET", "")
 
     if not webhook_secret:
-        return True  # En desarrollo, no verificar firma
+        return False  # En producción, la firma SIEMPRE debe verificarse
 
     timestamp = os.environ.get("CLERK_WEBHOOK_TIMESTAMP", "0")
     message = f"{timestamp}.{payload.decode('utf-8')}"
@@ -152,7 +152,7 @@ def verify_stripe_signature(payload: bytes, signature: str) -> bool:
     webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 
     if not webhook_secret:
-        return True  # En desarrollo, no verificar firma
+        return False  # En producción, la firma SIEMPRE debe verificarse
 
     parts = signature.split(",")
     timestamp = ""

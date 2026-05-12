@@ -24,13 +24,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Crear directorio de trabajo
 WORKDIR /build
 
-# Copiar solo pyproject.toml primero (cache de dependencias)
-COPY backend/pyproject.toml backend/poetry.lock* ./
+# Copiar pyproject.toml y generar requirements.txt desde él
+COPY backend/pyproject.toml ./
 
-# Instilar Poetry y dependencias
+# Instilar Poetry, exportar a requirements.txt, instalar con pip
 RUN pip install poetry==1.8.5 && \
-    poetry config virtualenvs.create false && \
-    poetry install --only main --no-interaction --no-ansi
+    poetry export --only main --format requirements.txt --output requirements.txt --without-hashes && \
+    pip install -r requirements.txt
 
 # ---- Stage 2: Runtime ----
 FROM python:3.11-slim AS runtime

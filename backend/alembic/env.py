@@ -25,22 +25,17 @@ from ai_platform.models.db import (
     AgentMemory,
     Session,
     Message,
-    Contact,
 )
-from ai_platform.models.channel_mapping import ChannelMapping
 
 # Configurar logging
 logger = logging.getLogger("alembic.env")
 
 config = context.config
 
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
-
 # Leer DATABASE_URL desde variable de entorno o settings
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+psycopg://ai_platform:ai_platform@localhost:5432/ai_platform",
+    "postgresql+psycopg://postgres:postgres@localhost:5432/ai_platform",
 )
 
 # Sobrescribir la URL en el config de alembic
