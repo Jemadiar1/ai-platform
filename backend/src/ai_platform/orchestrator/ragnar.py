@@ -265,6 +265,32 @@ class Ragnar:
         params = decision["params"]
         session_id = decision.get("session_id")
 
+        # Validar que el módulo sea soportado
+        SUPPORTED_MODULES = {
+            "ai-connect",
+            "ai-social",
+            "ai-web",
+            "ai-content",
+            "ai-marketing",
+            "ai-sales",
+        }
+        if module not in SUPPORTED_MODULES and module != "uncategorized":
+            self.trajectory_manager.add_step(
+                session_id,
+                Step(
+                    step_type="error",
+                    module=module,
+                    error=f"Unsupported module: {module}",
+                ),
+            )
+            return {
+                "module": module,
+                "status": "error",
+                "result": {
+                    "error": f"El módulo '{module}' no es soportado",
+                },
+            }
+
         if module == "uncategorized":
             self.trajectory_manager.add_step(
                 session_id,
