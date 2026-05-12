@@ -10,19 +10,18 @@ Contiene funciones para:
 - Validar URLs contra SSRF (blocklist de IPs privadas)
 """
 
-import os
+import logging
 import re
 import time
-import json
-import logging
-from typing import Optional
-from datetime import datetime, timedelta, timezone
-from urllib.parse import urlparse
 from collections import OrderedDict
+from datetime import UTC, datetime, timedelta
 from ipaddress import ip_address, ip_network
+from typing import ClassVar
+from urllib.parse import urlparse
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+
 from ai_platform.core.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -60,10 +59,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def create_access_token(
-    data: dict,
-    expires_delta: Optional[timedelta] = None
-) -> str:
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     """
     Crear un token JWT de acceso.
 
@@ -86,22 +82,18 @@ def create_access_token(
     encode = data.copy()
 
     if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
+        expire = datetime.now(UTC) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(hours=settings.JWT_EXPIRATION_HOURS)
+        expire = datetime.now(UTC) + timedelta(hours=settings.JWT_EXPIRATION_HOURS)
 
     encode.update({"exp": expire})
 
-    encoded_jwt = jwt.encode(
-        encode,
-        settings.SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM
-    )
+    encoded_jwt = jwt.encode(encode, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
     return encoded_jwt
 
 
-def decode_token(token: str) -> Optional[dict]:
+def decode_token(token: str) -> dict | None:
     """
     Decodificar y validar un token JWT.
 
@@ -119,11 +111,7 @@ def decode_token(token: str) -> Optional[dict]:
     settings = get_settings()
 
     try:
-        decoded = jwt.decode(
-            token,
-            settings.SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM]
-        )
+        decoded = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
         return decoded
     except JWTError:
         return None
@@ -132,6 +120,7 @@ def decode_token(token: str) -> Optional[dict]:
 # =========================================================================
 # INJECTION SCANNER (12 patrones inspirados en Hermes)
 # =========================================================================
+
 
 class InjectionScanner:
     """
@@ -165,71 +154,42 @@ class InjectionScanner:
 
     # Patrón 1: Prompt injection markers
     _SYSTEM_INJECTION = re.compile(
-        r'(?:^|\n)\s*(?:"""|' + '"""' + r')\s*\n.*?(?:ignore|disregard|bypass|new rule|forget)',
-        re.IGNORECASE | re.DOTALL
+        r'(?:^|\n)\s*(?:"""|' + '"""' + r")\s*\n.*?(?:ignore|disregard|bypass|new rule|forget)",
+        re.IGNORECASE | re.DOTALL,
     )
 
     # Patrón 2: System directive tags
-    _DIRECTIVE_INJECTION = re.compile(
-        r'(?:^\s*(?:system|user|assistant|role):\s)',
-        re.IGNORECASE
-    )
+    _DIRECTIVE_INJECTION = re.compile(r"(?:^\s*(?:system|user|assistant|role):\s)", re.IGNORECASE)
 
     # Patrón 3: JSON injection en texto plano
-    _JSON_INJECTION = re.compile(
-        r'\{(?:\s*"(?:system|role|instruction|command)"\s*:)',
-        re.IGNORECASE
-    )
+    _JSON_INJECTION = re.compile(r'\{(?:\s*"(?:system|role|instruction|command)"\s*:)', re.IGNORECASE)
 
     # Patrón 4: HTML/JS injection
-    _HTML_INJECTION = re.compile(
-        r'<script|onerror\s*=|onload\s*=|javascript\s*:',
-        re.IGNORECASE
-    )
+    _HTML_INJECTION = re.compile(r"<script|onerror\s*=|onload\s*=|javascript\s*:", re.IGNORECASE)
 
     # Patrón 5: XML injection
-    _XML_INJECTION = re.compile(
-        r'<\?xml|<!DOCTYPE|<\!ENTITY|<\!ENTITY',
-        re.IGNORECASE
-    )
+    _XML_INJECTION = re.compile(r"<\?xml|<!DOCTYPE|<\!ENTITY|<\!ENTITY", re.IGNORECASE)
 
     # Patrón 6: Código de bloquete
-    _CODE_INJECTION = re.compile(
-        r'`{3,}.*?\n.*?system:|`{3,}.*?\n.*?ignore\s+previous',
-        re.IGNORECASE | re.DOTALL
-    )
+    _CODE_INJECTION = re.compile(r"`{3,}.*?\n.*?system:|`{3,}.*?\n.*?ignore\s+previous", re.IGNORECASE | re.DOTALL)
 
     # Patrón 7: Headers markdown como injection
-    _MD_INJECTION = re.compile(
-        r'^#{1,2}\s+(?:SYSTEM|INSTRUCTION|COMMAND|ROLE)\s*$',
-        re.IGNORECASE
-    )
+    _MD_INJECTION = re.compile(r"^#{1,2}\s+(?:SYSTEM|INSTRUCTION|COMMAND|ROLE)\s*$", re.IGNORECASE)
 
     # Patrón 8: Shell command injection
-    _SHELL_INJECTION = re.compile(
-        r'(?:`[^`]+`|\$\([^)]+\))\s*(?:;|&&|\|\||\|)'
-    )
+    _SHELL_INJECTION = re.compile(r"(?:`[^`]+`|\$\([^)]+\))\s*(?:;|&&|\|\||\|)")
 
     # Patrón 9: Credential exfiltration
-    _CREDENTIAL_EXFIL = re.compile(
-        r'(?:token|api[_-]?key|secret|password|private[_-]?key)\s*[:=]\s*\S+',
-        re.IGNORECASE
-    )
+    _CREDENTIAL_EXFIL = re.compile(r"(?:token|api[_-]?key|secret|password|private[_-]?key)\s*[:=]\s*\S+", re.IGNORECASE)
 
     # Patrón 10: Invisible Unicode chars (zero-width)
-    _INVISIBLE_UNICODE = re.compile(
-        r'[\u200B-\u200F\u2028-\u202E\u2060-\u2069\uFEFF\uFFF0-\uFFF9]'
-    )
+    _INVISIBLE_UNICODE = re.compile(r"[\u200B-\u200F\u2028-\u202E\u2060-\u2069\uFEFF\uFFF0-\uFFF9]")
 
     # Patrón 11: Bidirectional override
-    _BIDI_OVERRIDE = re.compile(
-        r'[\u202A-\u202E]'
-    )
+    _BIDI_OVERRIDE = re.compile(r"[\u202A-\u202E]")
 
     # Patrón 12: Control chars y null bytes
-    _CONTROL_CHARS = re.compile(
-        r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'
-    )
+    _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]")
 
     def __init__(self, max_content_length: int = 65536):
         """
@@ -263,7 +223,7 @@ class InjectionScanner:
                 "is_safe": False,
                 "flagged_patterns": ["content_too_long"],
                 "is_truncated": True,
-                "sanitized": text[:self.max_content_length]
+                "sanitized": text[: self.max_content_length],
             }
 
         # Patrón 1: Prompt injection
@@ -321,7 +281,7 @@ class InjectionScanner:
             "is_safe": len(flagged_patterns) == 0,
             "flagged_patterns": flagged_patterns,
             "is_truncated": False,
-            "sanitized": sanitized
+            "sanitized": sanitized,
         }
 
     def sanitize(self, text: str) -> str:
@@ -348,6 +308,7 @@ scanner = InjectionScanner()
 # PROMPT SANITIZER (inspirado en Hermes sanitize_title)
 # =========================================================================
 
+
 class PromptSanitizer:
     """
     Sanitizar prompts para inyección de prompts.
@@ -365,14 +326,10 @@ class PromptSanitizer:
     MAX_CONTENT_LENGTH = 65536
 
     # Control chars a remover
-    _CONTROL_PATTERN = re.compile(
-        r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'
-    )
+    _CONTROL_PATTERN = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]")
 
     # Unicode manipulation (zero-width, bidi, etc.)
-    _UNICODE_PATTERN = re.compile(
-        r'[\u200B-\u200F\u2028-\u202E\u2060-\u2069\uFEFF\uFFF0-\uFFF9]'
-    )
+    _UNICODE_PATTERN = re.compile(r"[\u200B-\u200F\u2028-\u202E\u2060-\u2069\uFEFF\uFFF0-\uFFF9]")
 
     def sanitize(self, text: str, max_length: int = MAX_CONTENT_LENGTH) -> str:
         """
@@ -395,7 +352,7 @@ class PromptSanitizer:
         text = self._UNICODE_PATTERN.sub(" ", text)
 
         # Collapsing de whitespace
-        text = re.sub(r'\s+', ' ', text).strip()
+        text = re.sub(r"\s+", " ", text).strip()
 
         # Truncar
         return text[:max_length]
@@ -407,6 +364,7 @@ prompt_sanitizer = PromptSanitizer()
 # =========================================================================
 # SSD (SSRF Protection)
 # =========================================================================
+
 
 class SSRFBlocklist:
     """
@@ -422,31 +380,31 @@ class SSRFBlocklist:
     """
 
     # Networks privadas bloqueadas
-    _BLOCKED_NETWORKS = [
-        ip_network("0.0.0.0/8"),           # "This" network
-        ip_network("10.0.0.0/8"),          # Private
-        ip_network("100.64.0.0/10"),       # CGNAT
-        ip_network("127.0.0.0/8"),         # Loopback
-        ip_network("169.254.0.0/16"),      # Link-local
-        ip_network("172.16.0.0/12"),       # Private
-        ip_network("192.0.0.0/24"),        # IANA IPv4
-        ip_network("192.0.2.0/24"),        # TEST-NET-1
-        ip_network("192.88.99.0/24"),      # 6to4 relay
-        ip_network("192.168.0.0/16"),      # Private
-        ip_network("198.18.0.0/15"),       # Benchmark test
-        ip_network("198.51.100.0/24"),     # TEST-NET-2
-        ip_network("203.0.113.0/24"),      # TEST-NET-3
-        ip_network("224.0.0.0/4"),         # Multicast
-        ip_network("240.0.0.0/4"),         # Reserved
+    _BLOCKED_NETWORKS: ClassVar[list] = [
+        ip_network("0.0.0.0/8"),  # "This" network
+        ip_network("10.0.0.0/8"),  # Private
+        ip_network("100.64.0.0/10"),  # CGNAT
+        ip_network("127.0.0.0/8"),  # Loopback
+        ip_network("169.254.0.0/16"),  # Link-local
+        ip_network("172.16.0.0/12"),  # Private
+        ip_network("192.0.0.0/24"),  # IANA IPv4
+        ip_network("192.0.2.0/24"),  # TEST-NET-1
+        ip_network("192.88.99.0/24"),  # 6to4 relay
+        ip_network("192.168.0.0/16"),  # Private
+        ip_network("198.18.0.0/15"),  # Benchmark test
+        ip_network("198.51.100.0/24"),  # TEST-NET-2
+        ip_network("203.0.113.0/24"),  # TEST-NET-3
+        ip_network("224.0.0.0/4"),  # Multicast
+        ip_network("240.0.0.0/4"),  # Reserved
         ip_network("255.255.255.255/32"),  # Broadcast
     ]
 
-    _DANGEROUS_SCHEMES = {"file", "gopher", "dict", "ftp"}
+    _DANGEROUS_SCHEMES: ClassVar[set] = {"file", "gopher", "dict", "ftp"}
 
-    _ALLOW_SCHEMES = {"http", "https"}
+    _ALLOW_SCHEMES: ClassVar[set] = {"http", "https"}
 
     # Localhost hostnames
-    _BLOCKED_HOSTNAMES = {
+    _BLOCKED_HOSTNAMES: ClassVar[set] = {
         "localhost",
         "0.0.0.0",
         "[::]",
@@ -486,10 +444,7 @@ class SSRFBlocklist:
                 return False
 
             # Verificar si la IP es privada/segura
-            if cls._is_private_ip(host):
-                return False
-
-            return True
+            return not cls._is_private_ip(host)
 
         except Exception:
             return False
@@ -509,6 +464,7 @@ class SSRFBlocklist:
 # =========================================================================
 # BOUNDED LRU CACHE
 # =========================================================================
+
 
 class LRUCache:
     """

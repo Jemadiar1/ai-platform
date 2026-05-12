@@ -12,11 +12,11 @@ Patrones de Hermes aplicados:
 """
 
 import asyncio
-import json
 import logging
-from typing import Dict, Any, Optional, Callable, List
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
+from typing import Any, ClassVar
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ class CronSchedule:
     WEEKLY = "weekly"
     CUSTOM = "custom"
 
-    INTERVALS = {
+    INTERVALS: ClassVar[dict] = {
         "hourly": timedelta(hours=1),
         "daily": timedelta(days=1),
         "weekly": timedelta(weeks=1),
@@ -47,15 +47,15 @@ class CronJob:
     next_run: datetime
     handler: Callable  # Función async a ejecutar
     active: bool = True
-    last_run: Optional[datetime] = None
+    last_run: datetime | None = None
     run_count: int = 0
-    meta: Dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
 
     def update_next_run(self):
         """Actualizar la próxima ejecución basada en el intervalo."""
         interval = CronSchedule.INTERVALS.get(self.schedule)
         if interval:
-            self.next_run = datetime.now(timezone.utc) + interval
+            self.next_run = datetime.now(UTC) + interval
 
     def get_next_run_iso(self) -> str:
         """Retornar próxima ejecución en formato ISO."""
@@ -71,16 +71,16 @@ class CronManager:
     """
 
     def __init__(self):
-        self._jobs: List[CronJob] = []
+        self._jobs: list[CronJob] = []
         self._run_interval_seconds = 60  # Verificar cada 60 segundos
-        self._scheduler_task: Optional[asyncio.Task] = None
+        self._scheduler_task: asyncio.Task | None = None
 
     def add_job(
         self,
         tenant_id: str,
         schedule: str,
         handler: Callable,
-        meta: Dict[str, Any] = None,
+        meta: dict[str, Any] | None = None,
     ) -> str:
         """
         Registrar un nuevo cron job.
@@ -101,16 +101,13 @@ class CronManager:
             job_id=str(uuid4()),
             tenant_id=tenant_id,
             schedule=schedule,
-            next_run=datetime.now(timezone.utc),
+            next_run=datetime.now(UTC),
             handler=handler,
             active=True,
             meta=meta or {},
         )
         self._jobs.append(job)
-        logger.info(
-            f"Cron job registered: {job.job_id} "
-            f"(tenant: {tenant_id}, schedule: {schedule})"
-        )
+        logger.info(f"Cron job registered: {job.job_id} (tenant: {tenant_id}, schedule: {schedule})")
         return job.job_id
 
     def remove_job(self, job_id: str) -> bool:
@@ -143,7 +140,7 @@ class CronManager:
 
     async def _check_due_jobs(self):
         """Verificar y ejecutar cron jobs vencidos."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for job in self._jobs:
             if job.active and job.next_run <= now:
                 try:
@@ -154,13 +151,11 @@ class CronManager:
                     job.last_run = now
                     job.run_count += 1
                     job.update_next_run()
-                    logger.info(
-                        f"Cron job executed: {job.job_id} (run #{job.run_count})"
-                    )
+                    logger.info(f"Cron job executed: {job.job_id} (run #{job.run_count})")
                 except Exception as e:
                     logger.error(f"Cron job {job.job_id} failed: {e}")
 
-    def list_jobs(self, tenant_id: Optional[str] = None) -> List[Dict]:
+    def list_jobs(self, tenant_id: str | None = None) -> list[dict]:
         """
         Listar todos los cron jobs (o de un tenant específico).
 
@@ -190,7 +185,7 @@ class CronManager:
 
 
 # Instancia global
-_cron_manager: Optional[CronManager] = None
+_cron_manager: CronManager | None = None
 
 
 def get_cron_manager() -> CronManager:

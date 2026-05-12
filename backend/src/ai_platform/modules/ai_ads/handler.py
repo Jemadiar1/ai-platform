@@ -3,9 +3,9 @@ Handler stub para el módulo ai-ads.
 TODO: Implementar lógica de campañas publicitarias.
 """
 
-from typing import Any
 import logging
 from datetime import datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -18,5 +18,5 @@ class Handler:
             "action": action,
             "status": "success",
             "note": "Stub - módulo ai-ads",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }

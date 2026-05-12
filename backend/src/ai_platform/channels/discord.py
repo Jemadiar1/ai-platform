@@ -12,9 +12,10 @@ Configuración:
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
+
 from ai_platform.channels.base import BaseChannel
 from ai_platform.core.config import get_settings
 
@@ -42,7 +43,7 @@ class DiscordChannel(BaseChannel):
             "Content-Type": "application/json",
         }
 
-    async def validate_webhook(self, payload: Any, headers: dict = None) -> dict:
+    async def validate_webhook(self, payload: Any, headers: dict | None = None) -> dict:
         """
         Validar que el webhook viene de Discord.
 
@@ -100,7 +101,7 @@ class DiscordChannel(BaseChannel):
         logger.warning("Payload de Discord sin estructura reconocida")
         return {"valid": False, "reason": "estructura_no_reconocida"}
 
-    async def extract_message(self, raw_payload: Any) -> Dict[str, str]:
+    async def extract_message(self, raw_payload: Any) -> dict[str, str]:
         """
         Extraer información del mensaje desde el formato de Discord.
 
@@ -156,18 +157,13 @@ class DiscordChannel(BaseChannel):
         # Detectar si es un slash command
         if raw_payload.get("type") == 2:
             data = raw_payload.get("data", {})
-            user_info = (
-                raw_payload.get("member", {})
-                .get("user", {})
-            )
+            user_info = raw_payload.get("member", {}).get("user", {})
             user_id = str(user_info.get("id", ""))
             user_name = user_info.get("username", "Usuario")
             message_text = ""
             options = data.get("options", [])
             if options:
-                message_text = " ".join(
-                    opt.get("value", "") for opt in options
-                )
+                message_text = " ".join(opt.get("value", "") for opt in options)
             chat_id = str(raw_payload.get("channel_id", ""))
 
             return {
@@ -181,8 +177,7 @@ class DiscordChannel(BaseChannel):
         author = raw_payload.get("author", {})
         user_id = str(author.get("id", ""))
         username = author.get("username", "")
-        discriminator = author.get("discriminator", "")
-        user_name = f"{username}"  # No incluir discriminator en nombre
+        user_name = username  # No incluir discriminator en nombre
 
         message_text = raw_payload.get("content", "") or ""
 
@@ -201,7 +196,7 @@ class DiscordChannel(BaseChannel):
             "chat_id": chat_id,
         }
 
-    def _get_bot_id(self, payload: Dict) -> str:
+    def _get_bot_id(self, payload: dict) -> str:
         """
         Extraer el ID del bot del payload.
 
@@ -220,8 +215,8 @@ class DiscordChannel(BaseChannel):
         self,
         chat_id: str,
         text: str,
-        embed: Optional[Dict] = None,
-        reply_to_message_id: Optional[str] = None,
+        embed: dict | None = None,
+        reply_to_message_id: str | None = None,
     ) -> Any:
         """
         Enviar mensaje a un canal de Discord.
@@ -291,7 +286,7 @@ class DiscordChannel(BaseChannel):
         self,
         interaction_token: str,
         text: str,
-        embed: Optional[Dict] = None,
+        embed: dict | None = None,
         ephemeral: bool = False,
     ) -> Any:
         """
@@ -337,7 +332,7 @@ class DiscordChannel(BaseChannel):
             logger.error(f"Error respondiendo interacción de Discord: {e}")
             return {"status": "error", "message": str(e)}
 
-    def _chunk_message(self, text: str, max_length: int = 2000) -> List[str]:
+    def _chunk_message(self, text: str, max_length: int = 2000) -> list[str]:
         """
         Dividir mensaje en chunks de máximo 2000 caracteres (límite de Discord).
 
@@ -357,9 +352,9 @@ class DiscordChannel(BaseChannel):
         title: str,
         description: str = "",
         color: int = 0x0099FF,
-        fields: Optional[List[Dict]] = None,
-        footer: Optional[str] = None,
-    ) -> Dict:
+        fields: list[dict] | None = None,
+        footer: str | None = None,
+    ) -> dict:
         """
         Crear un embed para mensajes ricos de Discord.
 

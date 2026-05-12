@@ -7,7 +7,7 @@ la ejecución entre los 7 módulos de IA.
 
 Arquitectura:
     Request -> Ragnar (LLM-based routing) -> Module Handler -> Response
-    
+
 Componentes:
     - ragnar.py: Motor de decisión principal
     - llm_client.py: Cliente OpenRouter para decisiones LLM
@@ -18,20 +18,14 @@ Componentes:
     - observability.py: Logging de decisiones críticas
 """
 
-from ai_platform.orchestrator import ragnar
-from ai_platform.orchestrator import llm_client
-from ai_platform.orchestrator import session
-from ai_platform.orchestrator import memory
-from ai_platform.orchestrator import skills
-from ai_platform.orchestrator import budget
-from ai_platform.orchestrator import observability
+from ai_platform.orchestrator import budget, llm_client, memory, observability, ragnar, session, skills
 
 __all__ = [
-    "ragnar",
-    "llm_client",
-    "session",
-    "memory",
-    "skills",
     "budget",
+    "llm_client",
+    "memory",
     "observability",
+    "ragnar",
+    "session",
+    "skills",
 ]

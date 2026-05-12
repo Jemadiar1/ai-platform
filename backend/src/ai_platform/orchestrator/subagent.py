@@ -14,11 +14,10 @@ Patrones de Hermes aplicados:
 """
 
 import asyncio
-import json
 import logging
-from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +29,12 @@ class SubagentResult:
     agent_id: str
     module: str
     status: str  # "completed", "timeout", "failed"
-    result: Dict[str, Any] = field(default_factory=dict)
+    result: dict[str, Any] = field(default_factory=dict)
     cost_usd: float = 0.0
-    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    completed_at: Optional[datetime] = None
+    started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    completed_at: datetime | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convertir a dict serializable."""
         return {
             "agent_id": self.agent_id,
@@ -54,8 +53,8 @@ class Subtask:
 
     module: str
     action: str
-    params: Dict[str, Any] = field(default_factory=dict)
-    depends_on: Optional[str] = None  # Índice de la subtarea dependiente
+    params: dict[str, Any] = field(default_factory=dict)
+    depends_on: str | None = None  # Índice de la subtarea dependiente
 
 
 class SubagentManager:
@@ -79,8 +78,8 @@ class SubagentManager:
         self,
         parent_session_id: str,
         tenant_id: str,
-        subtasks: List[Dict[str, Any]],
-    ) -> List[SubagentResult]:
+        subtasks: list[dict[str, Any]],
+    ) -> list[SubagentResult]:
         """
         Ejecutar múltiples subagentes en paralelo.
 
@@ -101,7 +100,7 @@ class SubagentManager:
         # Limitar ejecución paralela (como Hermes)
         semaphore = asyncio.Semaphore(self.max_parallel_subagents)
 
-        async def _run_with_sem(task: Dict[str, Any]) -> SubagentResult:
+        async def _run_with_sem(task: dict[str, Any]) -> SubagentResult:
             async with semaphore:
                 return await self._execute_single_subagent(task)
 
@@ -109,15 +108,11 @@ class SubagentManager:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Filtrar excepciones y retornar solo resultados válidos
-        return [
-            r
-            for r in results
-            if isinstance(r, SubagentResult)
-        ]
+        return [r for r in results if isinstance(r, SubagentResult)]
 
     async def _execute_single_subagent(
         self,
-        subtask: Dict[str, Any],
+        subtask: dict[str, Any],
     ) -> SubagentResult:
         """
         Ejecutar un único subagente con timeout.
@@ -162,34 +157,34 @@ class SubagentManager:
                 pass
 
             return SubagentResult(
-                agent_id=f"subagent_{datetime.now(timezone.utc).timestamp()}",
+                agent_id=f"subagent_{datetime.now(UTC).timestamp()}",
                 module=module,
                 status="completed",
                 result=result if isinstance(result, dict) else {"response": str(result)},
                 cost_usd=cost,
-                completed_at=datetime.now(timezone.utc),
+                completed_at=datetime.now(UTC),
             )
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(f"Subagent timeout for {module}:{action}")
             return SubagentResult(
-                agent_id=f"subagent_timeout_{datetime.now(timezone.utc).timestamp()}",
+                agent_id=f"subagent_timeout_{datetime.now(UTC).timestamp()}",
                 module=module,
                 status="timeout",
                 result={"error": "timeout_exceeded"},
-                completed_at=datetime.now(timezone.utc),
+                completed_at=datetime.now(UTC),
             )
         except Exception as e:
             logger.error(f"Subagent error for {module}:{action}: {e}")
             return SubagentResult(
-                agent_id=f"subagent_error_{datetime.now(timezone.utc).timestamp()}",
+                agent_id=f"subagent_error_{datetime.now(UTC).timestamp()}",
                 module=module,
                 status="failed",
                 result={"error": str(e)},
-                completed_at=datetime.now(timezone.utc),
+                completed_at=datetime.now(UTC),
             )
 
-    async def _call_handler(self, handler: Any, params: Dict) -> Any:
+    async def _call_handler(self, handler: Any, params: dict) -> Any:
         """
         Invocar el handler del módulo correctamente.
 
@@ -210,7 +205,7 @@ class SubagentManager:
 
 
 # Instancia global
-_subagent_manager: Optional[SubagentManager] = None
+_subagent_manager: SubagentManager | None = None
 
 
 def get_subagent_manager() -> SubagentManager:

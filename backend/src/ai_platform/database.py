@@ -15,10 +15,11 @@ La versión "binary" ya viene compilada, no necesita C compiler en Windows.
 - Todo lo demás es igual: model, query, CRUD
 """
 
-from typing import Generator
+from collections.abc import Generator
 
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, DeclarativeBase, Session
+from sqlalchemy import create_engine
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+
 from ai_platform.core.config import get_settings
 
 settings = get_settings()
@@ -33,35 +34,33 @@ engine = create_engine(
 
 # Crear el factory de sesiones
 # Una Session es un "contexto de trabajo" con la BD
-session_factory = sessionmaker(
-    engine,
-    expire_on_commit=False
-)
+session_factory = sessionmaker(engine, expire_on_commit=False)
 
 
 # Clase base para todos los modelos de la BD
 class Base(DeclarativeBase):
     """
     Base de SQLAlchemy para todos los modelos.
-    
+
     Cada tabla es una clase que hereda de Base:
-    
+
         class User(Base):
             __tablename__ = "users"
             id = Column(PG_UUID, primary_key=True)
             name = Column(String(255))
     """
+
     pass
 
 
 def get_db_session() -> Generator[Session, None, None]:
     """
     Dependency de FastAPI para obtener una sesión de base de datos.
-    
+
     FastAPI la inyecta automáticamente en los endpoints usando Depends().
     Se encarga de crear la session al inicio del request
     y cerrarla al final automáticamente.
-    
+
     Uso en endpoints:
         @app.get("/users/{user_id}")
         def get_user(user_id: UUID, db: Session = Depends(get_db_session)):
@@ -82,7 +81,7 @@ def get_db_session() -> Generator[Session, None, None]:
 def make_session() -> Generator[Session, None, None]:
     """
     Crear manualmente una sesión de BD (para usar fuera de FastAPI).
-    
+
     Útil para módulos que no son endpoints:
         with make_session() as db:
             db.execute(...)

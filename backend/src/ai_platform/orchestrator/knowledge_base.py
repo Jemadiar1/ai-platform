@@ -19,44 +19,117 @@ Ventajas del enfoque TF-IDF puro:
 
 import logging
 import math
-from typing import Dict, Any, List, Optional
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from collections import defaultdict
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Stop words en español (comunes a cualquier documento)
 # Incluidas para filtrar términos sin valor semántico en la búsqueda
 STOP_WORDS = {
-    "el", "la", "los", "las", "un", "una", "unos", "unas",
-    "de", "del", "al", "en", "con", "por", "para", "sin",
-    "sobre", "entre", "hacia", "hasta", "desde", "durante",
-    "ante", "como", "mas", "que", "lo", "se", "me", "mi",
-    "tu", "su", "no", "si", "y", "o", "u", "ni", "pero",
-    "mas", "menos", "más", "qué", "cuál", "quien", "cual",
-    "este", "esta", "estos", "estas", "ese", "esa", "esos",
-    "esas", "aquel", "aquella", "esos", "esas", "todo",
-    "todos", "toda", "todas", "mismo", "misma", "mismos",
-    "tambien", "también", "cada", "su", "sus", "nuestro",
-    "nuestra", "sus", "sus", "eso", "esta", "fue", "son",
-    "era", "eran", "ser", "estar", "haber", "hacer", "poder",
-    "decir", "tener", "ver", "dar", "llegar", "pasar", "ir",
+    "el",
+    "la",
+    "los",
+    "las",
+    "un",
+    "una",
+    "unos",
+    "unas",
+    "de",
+    "del",
+    "al",
+    "en",
+    "con",
+    "por",
+    "para",
+    "sin",
+    "sobre",
+    "entre",
+    "hacia",
+    "hasta",
+    "desde",
+    "durante",
+    "ante",
+    "como",
+    "mas",
+    "que",
+    "lo",
+    "se",
+    "me",
+    "mi",
+    "tu",
+    "su",
+    "no",
+    "si",
+    "y",
+    "o",
+    "u",
+    "ni",
+    "pero",
+    "menos",
+    "más",
+    "qué",
+    "cuál",
+    "quien",
+    "cual",
+    "este",
+    "esta",
+    "estos",
+    "estas",
+    "ese",
+    "esa",
+    "esos",
+    "esas",
+    "aquel",
+    "aquella",
+    "todo",
+    "todos",
+    "toda",
+    "todas",
+    "mismo",
+    "misma",
+    "mismos",
+    "tambien",
+    "también",
+    "cada",
+    "sus",
+    "nuestro",
+    "nuestra",
+    "eso",
+    "fue",
+    "son",
+    "era",
+    "eran",
+    "ser",
+    "estar",
+    "haber",
+    "hacer",
+    "poder",
+    "decir",
+    "tener",
+    "ver",
+    "dar",
+    "llegar",
+    "pasar",
+    "ir",
 }
 
 
 @dataclass
 class Document:
     """Documento indexado en la base de conocimiento."""
+
     doc_id: str
     tenant_id: str
     content: str
-    title: Optional[str] = None
-    category: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: Optional[datetime] = None
-    embedding: Optional[List[float]] = None  # Placeholder para embeddings futuros
+    title: str | None = None
+    category: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime | None = None
+    embedding: list[float] | None = None  # Placeholder para embeddings futuros
 
 
 class TFIDFVectorizer:
@@ -79,10 +152,10 @@ class TFIDFVectorizer:
     """
 
     def __init__(self):
-        self._idf: Dict[str, float] = {}
+        self._idf: dict[str, float] = {}
         self._docs_count = 0
 
-    def fit(self, documents: List[str]) -> None:
+    def fit(self, documents: list[str]) -> None:
         """
         Calcular IDF desde un corpus de documentos.
 
@@ -109,7 +182,7 @@ class TFIDFVectorizer:
             # log((N + 1) / (df + 1)) + 1: smoothing para evitar ceros
             self._idf[term] = math.log((n_docs + 1) / (freq + 1)) + 1
 
-    def _tokenize(self, text: str) -> List[str]:
+    def _tokenize(self, text: str) -> list[str]:
         """
         Tokenizar texto en palabras limpias.
 
@@ -124,13 +197,12 @@ class TFIDFVectorizer:
         """
         tokens = text.lower().split()
         return [
-            t.strip('.,;:!?()[]{}"\'-').lower()
+            t.strip(".,;:!?()[]{}\"'-").lower()
             for t in tokens
-            if t.strip('.,;:!?()[]{}"\'-').lower() not in STOP_WORDS
-            and len(t.strip('.,;:!?()[]{}"\'-')) > 2
+            if t.strip(".,;:!?()[]{}\"'-").lower() not in STOP_WORDS and len(t.strip(".,;:!?()[]{}\"'-")) > 2
         ]
 
-    def transform(self, text: str) -> Dict[str, float]:
+    def transform(self, text: str) -> dict[str, float]:
         """
         Convertir texto a vector TF-IDF disperso.
 
@@ -165,7 +237,7 @@ class TFIDFVectorizer:
 
         return tfidf
 
-    def cosine_similarity(self, vec_a: Dict[str, float], vec_b: Dict[str, float]) -> float:
+    def cosine_similarity(self, vec_a: dict[str, float], vec_b: dict[str, float]) -> float:
         """
         Calcular similitud de coseno entre dos vectores TF-IDF dispersos.
 
@@ -188,8 +260,8 @@ class TFIDFVectorizer:
         dot_product = sum(vec_a[t] * vec_b[t] for t in common_terms)
 
         # Magnitudes de cada vector
-        mag_a = math.sqrt(sum(v ** 2 for v in vec_a.values()))
-        mag_b = math.sqrt(sum(v ** 2 for v in vec_b.values()))
+        mag_a = math.sqrt(sum(v**2 for v in vec_a.values()))
+        mag_b = math.sqrt(sum(v**2 for v in vec_b.values()))
 
         if mag_a * mag_b == 0:
             return 0.0
@@ -219,7 +291,7 @@ class KnowledgeBase:
     """
 
     def __init__(self):
-        self._documents: Dict[str, Document] = {}
+        self._documents: dict[str, Document] = {}
         self._vectorizer = TFIDFVectorizer()
         self._max_documents_per_tenant = 1000
 
@@ -227,9 +299,9 @@ class KnowledgeBase:
         self,
         tenant_id: str,
         content: str,
-        title: Optional[str] = None,
-        category: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        title: str | None = None,
+        category: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """
         Agregar un documento a la base de conocimiento.
@@ -252,16 +324,13 @@ class KnowledgeBase:
             ValueError: Si se excede el límite de documentos del tenant
         """
         # Validar límite de capacidad por tenant
-        tenant_doc_count = sum(
-            1 for d in self._documents.values() if d.tenant_id == tenant_id
-        )
+        tenant_doc_count = sum(1 for d in self._documents.values() if d.tenant_id == tenant_id)
         if tenant_doc_count >= self._max_documents_per_tenant:
             raise ValueError(
-                f"Capacidad máxima alcanzada para tenant {tenant_id}: "
-                f"{self._max_documents_per_tenant} documentos"
+                f"Capacidad máxima alcanzada para tenant {tenant_id}: {self._max_documents_per_tenant} documentos"
             )
 
-        doc_id = f"doc_{datetime.now(timezone.utc).timestamp().hex[:12]}_{len(self._documents)}"
+        doc_id = f"doc_{datetime.now(UTC).timestamp().hex[:12]}_{len(self._documents)}"
 
         doc = Document(
             doc_id=doc_id,
@@ -305,7 +374,7 @@ class KnowledgeBase:
         tenant_id: str,
         limit: int = 5,
         threshold: float = 0.05,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Buscar documentos relevantes por similitud TF-IDF.
 
@@ -339,14 +408,16 @@ class KnowledgeBase:
             similarity = self._vectorizer.cosine_similarity(query_vec, doc_vec)
 
             if similarity >= threshold:
-                results.append({
-                    "doc_id": doc_id,
-                    "title": doc.title or "(sin título)",
-                    "category": doc.category or "general",
-                    "similarity": round(similarity, 4),
-                    "content": doc.content[:500],  # Truncar para no saturar contexto
-                    "metadata": doc.metadata,
-                })
+                results.append(
+                    {
+                        "doc_id": doc_id,
+                        "title": doc.title or "(sin título)",
+                        "category": doc.category or "general",
+                        "similarity": round(similarity, 4),
+                        "content": doc.content[:500],  # Truncar para no saturar contexto
+                        "metadata": doc.metadata,
+                    }
+                )
 
         # Ordenar por similitud descendente
         results.sort(key=lambda x: x["similarity"], reverse=True)
@@ -355,9 +426,9 @@ class KnowledgeBase:
     async def update_document(
         self,
         doc_id: str,
-        content: Optional[str] = None,
-        title: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        content: str | None = None,
+        title: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         """
         Actualizar un documento existente.
@@ -384,13 +455,10 @@ class KnowledgeBase:
             doc.title = title
         if metadata:
             doc.metadata.update(metadata)
-        doc.updated_at = datetime.now(timezone.utc)
+        doc.updated_at = datetime.now(UTC)
 
         # Re-calcular vectorizador para mantener precisión de búsqueda
-        tenant_docs = [
-            d.content for d in self._documents.values()
-            if d.tenant_id == doc.tenant_id
-        ]
+        tenant_docs = [d.content for d in self._documents.values() if d.tenant_id == doc.tenant_id]
         try:
             self._vectorizer.fit(tenant_docs)
         except Exception as e:
@@ -398,7 +466,7 @@ class KnowledgeBase:
 
         return True
 
-    async def get_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
+    async def get_document(self, doc_id: str) -> dict[str, Any] | None:
         """
         Obtener un documento por ID con todos sus campos.
 
@@ -421,7 +489,7 @@ class KnowledgeBase:
             }
         return None
 
-    async def get_stats(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_stats(self, tenant_id: str) -> dict[str, Any]:
         """
         Obtener estadísticas de la base de conocimiento para un tenant.
 
@@ -450,9 +518,9 @@ class KnowledgeBase:
     async def list_documents(
         self,
         tenant_id: str,
-        category: Optional[str] = None,
+        category: str | None = None,
         limit: int = 50,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Listar documentos de un tenant con filtro opcional por categoría.
 
@@ -470,13 +538,15 @@ class KnowledgeBase:
                 continue
             if category and doc.category != category:
                 continue
-            results.append({
-                "doc_id": doc.doc_id,
-                "title": doc.title or "(sin título)",
-                "category": doc.category or "general",
-                "created_at": doc.created_at.isoformat(),
-                "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
-            })
+            results.append(
+                {
+                    "doc_id": doc.doc_id,
+                    "title": doc.title or "(sin título)",
+                    "category": doc.category or "general",
+                    "created_at": doc.created_at.isoformat(),
+                    "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
+                }
+            )
 
         results.sort(
             key=lambda x: x["created_at"],
@@ -486,7 +556,7 @@ class KnowledgeBase:
 
 
 # Instancia global singleton
-_knowledge_base: Optional[KnowledgeBase] = None
+_knowledge_base: KnowledgeBase | None = None
 
 
 def get_knowledge_base() -> KnowledgeBase:

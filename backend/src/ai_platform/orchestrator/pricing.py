@@ -20,8 +20,8 @@ MODEL_PRICING = {
     # Anthropic Claude
     # ------------------------------------------------------------------
     "anthropic/claude-3.5-sonnet": {
-        "input_price_per_1m": 3.0,       # $3 por cada 1M tokens de entrada
-        "output_price_per_1m": 15.0,     # $15 por cada 1M tokens de salida
+        "input_price_per_1m": 3.0,  # $3 por cada 1M tokens de entrada
+        "output_price_per_1m": 15.0,  # $15 por cada 1M tokens de salida
         "category": "premium",
     },
     "anthropic/claude-3.5-sonnet:beta": {
@@ -35,7 +35,7 @@ MODEL_PRICING = {
         "category": "premium",
     },
     "anthropic/claude-3-opus": {
-        "input_price_per_1m": 15.0,      # $15 entrada, $75 salida - el más caro
+        "input_price_per_1m": 15.0,  # $15 entrada, $75 salida - el más caro
         "output_price_per_1m": 75.0,
         "category": "premium",
     },
@@ -44,18 +44,13 @@ MODEL_PRICING = {
         "output_price_per_1m": 75.0,
         "category": "premium",
     },
-    "anthropic/claude-3.5-sonnet": {
-        "input_price_per_1m": 3.0,
-        "output_price_per_1m": 15.0,
-        "category": "premium",
-    },
     "anthropic/claude-3.5-sonnet-v2": {
         "input_price_per_1m": 3.0,
         "output_price_per_1m": 15.0,
         "category": "premium",
     },
     "anthropic/claude-3-haiku": {
-        "input_price_per_1m": 0.25,      # $0.25 entrada, $1.25 salida
+        "input_price_per_1m": 0.25,  # $0.25 entrada, $1.25 salida
         "output_price_per_1m": 1.25,
         "category": "economy",
     },
@@ -68,12 +63,12 @@ MODEL_PRICING = {
     # OpenAI
     # ------------------------------------------------------------------
     "openai/gpt-4o": {
-        "input_price_per_1m": 2.50,      # $2.50 entrada, $10 salida
+        "input_price_per_1m": 2.50,  # $2.50 entrada, $10 salida
         "output_price_per_1m": 10.0,
         "category": "premium",
     },
     "openai/gpt-4o-mini": {
-        "input_price_per_1m": 0.15,      # $0.15 entrada, $0.60 salida
+        "input_price_per_1m": 0.15,  # $0.15 entrada, $0.60 salida
         "output_price_per_1m": 0.60,
         "category": "economy",
     },
@@ -126,7 +121,7 @@ MODEL_PRICING = {
     # Google / Gemini
     # ------------------------------------------------------------------
     "google/gemini-2.0-flash-exp:free": {
-        "input_price_per_1m": 0.0,        # Gratis
+        "input_price_per_1m": 0.0,  # Gratis
         "output_price_per_1m": 0.0,
         "category": "free",
     },
@@ -308,7 +303,7 @@ MODEL_PRICING = {
     # OpenRouter Auto
     # ------------------------------------------------------------------
     "openrouter/auto": {
-        "input_price_per_1m": 0.5,        # Aproximado (varía según el modelo que elija)
+        "input_price_per_1m": 0.5,  # Aproximado (varía según el modelo que elija)
         "output_price_per_1m": 2.0,
         "category": "standard",
     },
@@ -362,11 +357,14 @@ def get_model_pricing(model_name: str) -> dict:
         >>> pricing["input_price_per_1m"]
         3.0
     """
-    return MODEL_PRICING.get(model_name, {
-        "input_price_per_1m": 1.0,
-        "output_price_per_1m": 5.0,
-        "category": "standard",
-    })
+    return MODEL_PRICING.get(
+        model_name,
+        {
+            "input_price_per_1m": 1.0,
+            "output_price_per_1m": 5.0,
+            "category": "standard",
+        },
+    )
 
 
 def calculate_cost(input_tokens: int, output_tokens: int, model_name: str) -> float:
@@ -430,10 +428,12 @@ def list_available_models() -> list:
     """
     result = []
     for model_name, pricing in MODEL_PRICING.items():
-        result.append({
-            "model": model_name,
-            "category": pricing["category"],
-            "input_price_per_1m": pricing["input_price_per_1m"],
-            "output_price_per_1m": pricing["output_price_per_1m"],
-        })
+        result.append(
+            {
+                "model": model_name,
+                "category": pricing["category"],
+                "input_price_per_1m": pricing["input_price_per_1m"],
+                "output_price_per_1m": pricing["output_price_per_1m"],
+            }
+        )
     return result

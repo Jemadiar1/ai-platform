@@ -17,12 +17,12 @@ Patrones implementados:
 - Wait-if-needed con tiempo máximo de espera
 """
 
-import time
 import logging
-from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass, field
-from threading import Lock
+import time
 from collections import defaultdict
+from dataclasses import dataclass
+from threading import Lock
+from typing import ClassVar
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +43,9 @@ class RateLimit:
 
     max_requests: int
     window_seconds: int
-    retry_after: Optional[float] = None
+    retry_after: float | None = None
 
-    def is_exceeded(self, timestamps: List[float]) -> bool:
+    def is_exceeded(self, timestamps: list[float]) -> bool:
         """
         Verificar si se excedió el límite de tasa.
 
@@ -62,7 +62,7 @@ class RateLimit:
         recent = [t for t in timestamps if t > now - self.window_seconds]
         return len(recent) >= self.max_requests
 
-    def get_remaining(self, timestamps: List[float]) -> int:
+    def get_remaining(self, timestamps: list[float]) -> int:
         """
         Número de requests restantes en la ventana actual.
 
@@ -76,7 +76,7 @@ class RateLimit:
         recent = [t for t in timestamps if t > now - self.window_seconds]
         return max(0, self.max_requests - len(recent))
 
-    def get_retry_after(self, timestamps: List[float]) -> float:
+    def get_retry_after(self, timestamps: list[float]) -> float:
         """
         Calcular cuánto tiempo esperar antes de hacer otra request.
 
@@ -114,7 +114,7 @@ class RateLimitTracker:
 
     # Límites por servicio
     # Estos valores son basados en los límites reales de cada API
-    RATE_LIMITS = {
+    RATE_LIMITS: ClassVar[dict] = {
         "openrouter": RateLimit(max_requests=1000, window_seconds=60),
         "stripe": RateLimit(max_requests=100, window_seconds=60),
         "whatsapp": RateLimit(max_requests=50, window_seconds=60),
@@ -122,7 +122,7 @@ class RateLimitTracker:
     }
 
     def __init__(self):
-        self._timestamps: Dict[str, List[float]] = defaultdict(list)
+        self._timestamps: dict[str, list[float]] = defaultdict(list)
         self._lock = Lock()
 
     def record_request(self, service: str, success: bool = True) -> None:
@@ -144,14 +144,12 @@ class RateLimitTracker:
             limit = self.RATE_LIMITS.get(service)
             if limit:
                 cutoff = now - limit.window_seconds
-                self._timestamps[service] = [
-                    t for t in self._timestamps[service] if t > cutoff
-                ]
+                self._timestamps[service] = [t for t in self._timestamps[service] if t > cutoff]
 
             if not success:
                 logger.warning(f"Request failed for {service}")
 
-    def check_remaining(self, service: str) -> Dict[str, int]:
+    def check_remaining(self, service: str) -> dict[str, int]:
         """
         Verificar cuántas requests quedan en la ventana actual.
 
@@ -203,7 +201,7 @@ class RateLimitTracker:
                 wait_time = min(wait_time, max_wait)
                 time.sleep(wait_time)
 
-    def get_all_limits(self) -> Dict[str, Dict[str, int]]:
+    def get_all_limits(self) -> dict[str, dict[str, int]]:
         """
         Obtener los límites de todos los servicios.
 
@@ -216,7 +214,7 @@ class RateLimitTracker:
                 result[service] = self.check_remaining(service)
             return result
 
-    def reset(self, service: Optional[str] = None) -> None:
+    def reset(self, service: str | None = None) -> None:
         """
         Resetear el tracking de rate limits.
 
@@ -231,7 +229,7 @@ class RateLimitTracker:
 
 
 # Instancia global (singleton)
-_rate_limit_tracker: Optional[RateLimitTracker] = None
+_rate_limit_tracker: RateLimitTracker | None = None
 
 
 def get_rate_limit_tracker() -> RateLimitTracker:

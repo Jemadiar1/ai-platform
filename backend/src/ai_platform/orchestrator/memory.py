@@ -19,20 +19,19 @@ Uso:
 import hashlib
 import json
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Any
 
-from sqlalchemy import select, text
-from sqlalchemy.orm import Session
+from sqlalchemy import text
 
+from ai_platform.core.security import prompt_sanitizer, scanner
 from ai_platform.database import make_session
-from ai_platform.core.security import scanner, prompt_sanitizer
-from ai_platform.orchestrator.session import SessionManager
 
 logger = logging.getLogger(__name__)
 
 
 class IntegrityError(Exception):
     """Error de integridad de datos en memoria."""
+
     pass
 
 
@@ -53,11 +52,11 @@ def _compute_checksum(content: str) -> str:
     """
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
-# Límites de caracteres inspirados en Hermes
-MEMORY_MAX_CHARS = 2200     # ~800 tokens de contexto
-USER_MAX_CHARS = 1375       # ~500 tokens de contexto
-MEMORY_DELIMITER = "§"     # Separador de entradas (hermes-style)
 
+# Límites de caracteres inspirados en Hermes
+MEMORY_MAX_CHARS = 2200  # ~800 tokens de contexto
+USER_MAX_CHARS = 1375  # ~500 tokens de contexto
+MEMORY_DELIMITER = "§"  # Separador de entradas (hermes-style)
 
 
 class ContextReferenceManager:
@@ -80,7 +79,7 @@ class ContextReferenceManager:
         new_session_id: str,
         tenant_id: str,
         limit: int = 3,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Obtener contexto de sesiones anteriores para un tenant.
 
@@ -97,28 +96,33 @@ class ContextReferenceManager:
             Lista de dicts con contexto de sesiones previas
         """
         with make_session() as db:
-            result = db.execute(text("""
+            result = db.execute(
+                text("""
                 SELECT id, created_at, last_message, message_count
                 FROM sessions
                 WHERE tenant_id = :tenant_id
                   AND id != :new_session_id
                 ORDER BY created_at DESC
                 LIMIT :limit
-            """), {
-                "tenant_id": tenant_id,
-                "new_session_id": new_session_id,
-                "limit": limit,
-            }).fetchall()
+            """),
+                {
+                    "tenant_id": tenant_id,
+                    "new_session_id": new_session_id,
+                    "limit": limit,
+                },
+            ).fetchall()
 
             contexts = []
             for row in result:
-                contexts.append({
-                    "session_id": str(row.id),
-                    "created_at": row.created_at.isoformat() if row.created_at else None,
-                    "last_message": row.last_message or "",
-                    "message_count": row.message_count or 0,
-                    "is_active": True,
-                })
+                contexts.append(
+                    {
+                        "session_id": str(row.id),
+                        "created_at": row.created_at.isoformat() if row.created_at else None,
+                        "last_message": row.last_message or "",
+                        "message_count": row.message_count or 0,
+                        "is_active": True,
+                    }
+                )
 
             return contexts
 
@@ -126,7 +130,7 @@ class ContextReferenceManager:
         self,
         tenant_id: str,
         session_id: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Obtener temas comunes entre sesiones previas.
 
@@ -141,12 +145,15 @@ class ContextReferenceManager:
             Lista de dicts con temas y su peso
         """
         with make_session() as db:
-            result = db.execute(text("""
+            result = db.execute(
+                text("""
                 SELECT DISTINCT content FROM messages
                 WHERE session_id = :session_id
                   AND role = 'assistant'
                   AND CHAR_LENGTH(content) < 100
-            """), {"session_id": session_id}).fetchall()
+            """),
+                {"session_id": session_id},
+            ).fetchall()
 
             topics = [row.content for row in result if row.content]
 
@@ -154,7 +161,7 @@ class ContextReferenceManager:
 
 
 # Instancia global del manager de contexto
-_context_reference_manager: Optional[ContextReferenceManager] = None
+_context_reference_manager: ContextReferenceManager | None = None
 
 
 def get_context_reference_manager() -> ContextReferenceManager:
@@ -173,7 +180,7 @@ def get_context_reference_manager() -> ContextReferenceManager:
 class MemoryEntry:
     """
     Represents a single memory entry.
-    
+
     Pattern from Hermes: entries are stored with a section delimiter.
     """
 
@@ -211,7 +218,7 @@ class MemoryManager:
         self,
         session_id: str,
         prompt: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Prefetch: recordar memoria relevante ANTES de cada turno.
 
@@ -247,7 +254,7 @@ class MemoryManager:
         session_id: str,
         entry_type: str,
         content: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Agregar una entrada a la memoria acotada con patrón de escritura atómica.
 
@@ -276,10 +283,7 @@ class MemoryManager:
         # Security scan
         scan_result = scanner.scan(content)
         if not scan_result["is_safe"]:
-            logger.warning(
-                f"Memory injection detected. Patterns: {scan_result['flagged_patterns']}. "
-                "Rejecting write."
-            )
+            logger.warning(f"Memory injection detected. Patterns: {scan_result['flagged_patterns']}. Rejecting write.")
             return {
                 "success": False,
                 "error": "prompt_injection_detected",
@@ -318,7 +322,7 @@ class MemoryManager:
                         "success": False,
                         "error": "memory_full",
                         "message": f"Memory is full ({current_total_chars}/{max_chars} chars). "
-                                  f"Consider consolidating entries.",
+                        f"Consider consolidating entries.",
                         "available_chars": max_chars - current_total_chars,
                     }
 
@@ -359,7 +363,7 @@ class MemoryManager:
                         "content": content,
                         "char_count": len(content),
                         "checksum": checksum,
-                    }
+                    },
                 )
 
                 # Step 5: Validate the write (checksum verification)
@@ -377,7 +381,7 @@ class MemoryManager:
                         "session_id": session_id,
                         "type": entry_type,
                         "content": content,
-                    }
+                    },
                 ).first()
 
                 # Validate: checksum must match
@@ -386,9 +390,7 @@ class MemoryManager:
                         f"Checksum mismatch for memory entry: session={session_id}, "
                         f"expected={checksum}, got={verify_result.checksum}"
                     )
-                    raise IntegrityError(
-                        f"Checksum mismatch for memory entry. Data may be corrupted."
-                    )
+                    raise IntegrityError("Checksum mismatch for memory entry. Data may be corrupted.")
 
                 # Step 6: Commit (atomic swap - all or nothing)
                 db.commit()
@@ -417,7 +419,7 @@ class MemoryManager:
         self,
         session_id: str,
         user_message: str,
-        assistant_result: Dict[str, Any],
+        assistant_result: dict[str, Any],
     ) -> None:
         """
         Sync: guardar conversación después de cada turno.
@@ -437,6 +439,7 @@ class MemoryManager:
 
         # Add both user and assistant messages to session history
         from ai_platform.orchestrator.session import get_session_manager
+
         sm = get_session_manager()
 
         await sm.add_message(
@@ -452,14 +455,13 @@ class MemoryManager:
         )
 
         logger.info(
-            f"Turn synced: session={session_id}, "
-            f"user_chars={len(user_message)}, result_chars={len(result_content)}"
+            f"Turn synced: session={session_id}, user_chars={len(user_message)}, result_chars={len(result_content)}"
         )
 
     async def get_summary(
         self,
         session_id: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Obtener un resumen de la memoria de una sesión.
 
@@ -475,7 +477,7 @@ class MemoryManager:
         with make_session() as db:
             result = db.execute(
                 text("""
-                    SELECT 
+                    SELECT
                         COUNT(*) FILTER (WHERE type = 'memory') as memory_count,
                         COUNT(*) FILTER (WHERE type = 'user') as user_count
                     FROM agent_memory
@@ -583,7 +585,7 @@ class MemoryManager:
         session_id: str,
         query: str,
         limit: int = 3,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Buscar contexto relevante en mensajes anteriores.
         """
@@ -610,10 +612,10 @@ class MemoryManager:
             ]
 
     @staticmethod
-    def _render_block(delimiter: str, entries: List[str]) -> str:
+    def _render_block(delimiter: str, entries: list[str]) -> str:
         """
         Renderizar una lista de entradas con un delimitador.
-        
+
         Pattern from Hermes: entries separated by § (section sign).
         """
         if not entries:
@@ -622,7 +624,7 @@ class MemoryManager:
 
 
 # Instancia global
-_memory_manager: Optional[MemoryManager] = None
+_memory_manager: MemoryManager | None = None
 
 
 def get_memory_manager() -> MemoryManager:

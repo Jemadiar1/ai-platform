@@ -16,9 +16,10 @@ import hashlib
 import hmac
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
+
 from ai_platform.channels.base import BaseChannel
 from ai_platform.core.config import get_settings
 
@@ -42,7 +43,7 @@ class WhatsAppChannel(BaseChannel):
         self.verify_token = self.settings.WHATSAPP_WEBHOOK_VERIFY_TOKEN
         self.base_url = "https://graph.facebook.com/v18.0"
 
-    async def validate_webhook(self, payload: Any, headers: dict = None) -> dict:
+    async def validate_webhook(self, payload: Any, headers: dict | None = None) -> dict:
         """
         Validar el webhook de Meta/Facebook.
 
@@ -91,7 +92,7 @@ class WhatsAppChannel(BaseChannel):
 
         return {"valid": True, "reason": "webhook_valido"}
 
-    def _verify_webhook_signature(self, payload: dict, headers: dict = None) -> Optional[bool]:
+    def _verify_webhook_signature(self, payload: dict, headers: dict | None = None) -> bool | None:
         """
         Verificar la firma HMAC-SHA256 del webhook de Meta.
 
@@ -151,7 +152,7 @@ class WhatsAppChannel(BaseChannel):
 
         return result
 
-    async def extract_message(self, raw_payload: Any) -> Dict[str, str]:
+    async def extract_message(self, raw_payload: Any) -> dict[str, str]:
         """
         Extraer información del mensaje desde el webhook de Meta.
 
@@ -268,7 +269,7 @@ class WhatsAppChannel(BaseChannel):
         self,
         chat_id: str,
         text: str,
-        template_name: Optional[str] = None,
+        template_name: str | None = None,
         **kwargs: Any,
     ) -> Any:
         """
@@ -360,7 +361,7 @@ class WhatsAppChannel(BaseChannel):
         mode: str,
         token: str,
         challenge: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Verificar el challenge del webhook de Facebook.
 
@@ -381,7 +382,7 @@ class WhatsAppChannel(BaseChannel):
 
         return {"challenge": challenge}
 
-    def _chunk_message(self, text: str, max_length: int = 1024) -> List[str]:
+    def _chunk_message(self, text: str, max_length: int = 1024) -> list[str]:
         """
         Dividir mensaje en chunks para WhatsApp.
 

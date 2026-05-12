@@ -3,9 +3,9 @@ Handler stub para el módulo ai-analytics.
 TODO: Implementar lógica de reportes y métricas.
 """
 
-from typing import Any
 import logging
 from datetime import datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -18,5 +18,5 @@ class Handler:
             "action": action,
             "status": "success",
             "note": "Stub - módulo ai-analytics",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }

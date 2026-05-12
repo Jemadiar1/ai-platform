@@ -17,11 +17,10 @@ Uso:
     stats = await tracker.get_stats(tenant_id)
 """
 
-import json
 import logging
 import time
-from typing import Optional, Dict, Any
 from collections import defaultdict
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +43,9 @@ class TaskBudget:
         self.tokens_output = 0
         self.cost_usd = 0.0
         self.started_at = time.time()
-        self.completed_at: Optional[float] = None
+        self.completed_at: float | None = None
         self.success = False
-        self.error: Optional[str] = None
+        self.error: str | None = None
 
     def record_turn(
         self,
@@ -88,7 +87,7 @@ class TaskBudget:
             return self.completed_at - self.started_at
         return time.time() - self.started_at
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "task_id": self.task_id,
             "tenant_id": self.tenant_id,
@@ -122,8 +121,8 @@ class BudgetTracker:
     ):
         self.max_iterations = max_iterations
         self.max_cost_usd = max_cost_usd
-        self._active_tasks: Dict[str, TaskBudget] = {}
-        self._tenant_totals: Dict[str, Dict[str, float]] = defaultdict(
+        self._active_tasks: dict[str, TaskBudget] = {}
+        self._tenant_totals: dict[str, dict[str, float]] = defaultdict(
             lambda: {"iterations": 0, "cost_usd": 0.0, "tasks": 0}
         )
 
@@ -150,10 +149,7 @@ class BudgetTracker:
         # Update tenant totals
         self._tenant_totals[tenant_id]["tasks"] += 1
 
-        logger.info(
-            f"Budget tracking started: task={task_id}, tenant={tenant_id}, "
-            f"module={module}"
-        )
+        logger.info(f"Budget tracking started: task={task_id}, tenant={tenant_id}, module={module}")
 
         return budget
 
@@ -162,7 +158,7 @@ class BudgetTracker:
         task_id: str,
         module: str,
         success: bool,
-        error: Optional[str] = None,
+        error: str | None = None,
     ) -> None:
         """
         Finalizar tracking de una tarea.
@@ -223,10 +219,7 @@ class BudgetTracker:
 
         # Check iteration limit
         if budget.iterations + 1 > self.max_iterations:
-            logger.warning(
-                f"Iteration budget exceeded for task {task_id}: "
-                f"{budget.iterations}/{self.max_iterations}"
-            )
+            logger.warning(f"Iteration budget exceeded for task {task_id}: {budget.iterations}/{self.max_iterations}")
             return False
 
         # Check cost limit
@@ -240,7 +233,7 @@ class BudgetTracker:
         budget.record_turn(input_tokens, output_tokens, cost_usd)
         return True
 
-    def get_task_budget(self, task_id: str) -> Optional[Dict[str, Any]]:
+    def get_task_budget(self, task_id: str) -> dict[str, Any] | None:
         """
         Obtener el budget actual de una tarea.
 
@@ -255,7 +248,7 @@ class BudgetTracker:
             return None
         return budget.to_dict()
 
-    async def get_stats(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_stats(self, tenant_id: str) -> dict[str, Any]:
         """
         Obtener estadísticas de uso de un tenant.
 
@@ -268,10 +261,7 @@ class BudgetTracker:
         totals = self._tenant_totals.get(tenant_id, {"iterations": 0, "cost_usd": 0.0, "tasks": 0})
 
         # Contar tareas activas
-        active = sum(
-            1 for b in self._active_tasks.values()
-            if b.tenant_id == tenant_id
-        )
+        active = sum(1 for b in self._active_tasks.values() if b.tenant_id == tenant_id)
 
         return {
             "tenant_id": tenant_id,
@@ -281,12 +271,9 @@ class BudgetTracker:
             "total_cost_usd": round(totals["cost_usd"], 4),
         }
 
-    def get_all_active(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_active(self) -> dict[str, dict[str, Any]]:
         """Obtener todas las tareas activas."""
-        return {
-            task_id: budget.to_dict()
-            for task_id, budget in self._active_tasks.items()
-        }
+        return {task_id: budget.to_dict() for task_id, budget in self._active_tasks.items()}
 
     async def close(self) -> None:
         """Limpiar recursos."""
@@ -295,7 +282,7 @@ class BudgetTracker:
 
 
 # Instancia global
-_budget_tracker: Optional[BudgetTracker] = None
+_budget_tracker: BudgetTracker | None = None
 
 
 def get_budget_tracker() -> BudgetTracker:

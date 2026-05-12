@@ -16,16 +16,14 @@ Los routers se agrupan por resource:
 
 from fastapi import APIRouter
 
-# Crear el router principal de la versión 1
-router = APIRouter()
-
-# Importar routers de cada resource
-# Esto permite mantener cada recurso en un archivo separado
 from ai_platform.api.v1.ping import router as ping_router
+from ai_platform.api.v1.ragnar import router as ragnar_router
 from ai_platform.api.v1.tasks import router as tasks_router
 from ai_platform.api.v1.tenants import router as tenants_router
 from ai_platform.api.v1.webhooks import router as webhooks_router
-from ai_platform.api.v1.ragnar import router as ragnar_router
+
+# Crear el router principal de la versión 1
+router = APIRouter()
 
 # Incluir routers con prefijo
 router.include_router(ping_router)

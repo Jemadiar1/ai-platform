@@ -24,10 +24,9 @@ Uso:
 
 import json
 import logging
-import time
-from typing import Optional, Dict, Any, List
-from datetime import datetime, timezone
 from collections import defaultdict
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -51,10 +50,10 @@ class DecisionLogger:
 
     def __init__(self):
         self._decision_count = 0
-        self._module_counts: Dict[str, int] = defaultdict(int)
+        self._module_counts: dict[str, int] = defaultdict(int)
         self._error_count = 0
 
-    def log_decision(self, decision: Dict[str, Any]) -> None:
+    def log_decision(self, decision: dict[str, Any]) -> None:
         """
         Registrar una decisión de routing.
 
@@ -74,12 +73,15 @@ class DecisionLogger:
 
         # Log en formato JSON para log-aggregators (Grafana/Loki)
         DECISION_LOGGER.info(
-            json.dumps({
-                "event": "routing_decision",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "decision_id": f"dec_{self._decision_count}",
-                **decision,
-            }, default=str)
+            json.dumps(
+                {
+                    "event": "routing_decision",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "decision_id": f"dec_{self._decision_count}",
+                    **decision,
+                },
+                default=str,
+            )
         )
 
         # Log de resumen para desarrolladores
@@ -89,7 +91,7 @@ class DecisionLogger:
             f"reasoning={decision.get('reasoning', '')[:100]}"
         )
 
-    def log_error(self, error: Dict[str, Any]) -> None:
+    def log_error(self, error: dict[str, Any]) -> None:
         """
         Registrar un error crítico del orquestador.
 
@@ -98,15 +100,18 @@ class DecisionLogger:
         """
         self._error_count += 1
         ERROR_LOGGER.error(
-            json.dumps({
-                "event": "orchestrator_error",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "error_id": f"err_{self._error_count}",
-                **error,
-            }, default=str)
+            json.dumps(
+                {
+                    "event": "orchestrator_error",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "error_id": f"err_{self._error_count}",
+                    **error,
+                },
+                default=str,
+            )
         )
 
-    def log_metric(self, metric: Dict[str, Any]) -> None:
+    def log_metric(self, metric: dict[str, Any]) -> None:
         """
         Registrar una métrica de uso.
 
@@ -114,14 +119,17 @@ class DecisionLogger:
             metric: Dict con datos de la métrica
         """
         METRIC_LOGGER.info(
-            json.dumps({
-                "event": "usage_metric",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                **metric,
-            }, default=str)
+            json.dumps(
+                {
+                    "event": "usage_metric",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    **metric,
+                },
+                default=str,
+            )
         )
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """
         Obtener estadísticas de decisiones.
 
@@ -143,14 +151,14 @@ class Observation:
     def __init__(
         self,
         event_type: str,
-        data: Dict[str, Any],
+        data: dict[str, Any],
     ):
-        self.timestamp = datetime.now(timezone.utc)
+        self.timestamp = datetime.now(UTC)
         self.event_type = event_type
         self.data = data
-        self.trace_id: Optional[str] = None
+        self.trace_id: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "timestamp": self.timestamp.isoformat(),
             "event_type": self.event_type,
@@ -171,7 +179,7 @@ class MetricsCollector:
     """
 
     def __init__(self):
-        self._events: List[Observation] = []
+        self._events: list[Observation] = []
         self._max_history = 10000  # Mantener últimas 10K entradas
 
     def record_decision(
@@ -203,13 +211,15 @@ class MetricsCollector:
 
         # Log como métrica
         METRIC_LOGGER.info(
-            json.dumps({
-                "event": "routing_decision",
-                "tenant_id": tenant_id,
-                "module": module,
-                "latency_ms": round(latency_ms, 2),
-                "model": model,
-            })
+            json.dumps(
+                {
+                    "event": "routing_decision",
+                    "tenant_id": tenant_id,
+                    "module": module,
+                    "latency_ms": round(latency_ms, 2),
+                    "model": model,
+                }
+            )
         )
 
     def record_task_result(
@@ -243,17 +253,19 @@ class MetricsCollector:
         self._events.append(observation)
 
         METRIC_LOGGER.info(
-            json.dumps({
-                "event": "task_result",
-                "tenant_id": tenant_id,
-                "module": module,
-                "success": success,
-                "cost_usd": round(cost_usd, 6),
-                "tokens": tokens,
-            })
+            json.dumps(
+                {
+                    "event": "task_result",
+                    "tenant_id": tenant_id,
+                    "module": module,
+                    "success": success,
+                    "cost_usd": round(cost_usd, 6),
+                    "tokens": tokens,
+                }
+            )
         )
 
-    def get_tenant_metrics(self, tenant_id: str) -> Dict[str, Any]:
+    def get_tenant_metrics(self, tenant_id: str) -> dict[str, Any]:
         """
         Obtener métricas agregadas de un tenant.
 
@@ -263,10 +275,7 @@ class MetricsCollector:
         Retorna:
             Dict con métricas agregadas
         """
-        tenant_events = [
-            e for e in self._events
-            if e.data.get("tenant_id") == tenant_id
-        ]
+        tenant_events = [e for e in self._events if e.data.get("tenant_id") == tenant_id]
 
         module_counts = defaultdict(int)
         total_latency = 0.0
@@ -302,13 +311,15 @@ class MetricsCollector:
         return {
             "total_events": len(tenant_events),
             "module_distribution": dict(module_counts),
-            "success_rate": round(success_count / (success_count + fail_count), 3) if (success_count + fail_count) > 0 else 0,
+            "success_rate": round(success_count / (success_count + fail_count), 3)
+            if (success_count + fail_count) > 0
+            else 0,
             "avg_latency_ms": round(total_latency / latency_count, 2) if latency_count > 0 else 0,
             "total_cost_usd": round(total_cost, 6),
             "total_tokens": total_tokens,
         }
 
-    def get_system_metrics(self) -> Dict[str, Any]:
+    def get_system_metrics(self) -> dict[str, Any]:
         """
         Obtener métricas del sistema completo.
 

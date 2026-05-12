@@ -12,9 +12,9 @@ Patrones de Hermes aplicados:
 """
 
 import logging
-from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +26,10 @@ class Credential:
     provider: str
     key: str
     created_at: datetime
-    expires_at: Optional[datetime] = None
-    last_used: Optional[datetime] = None
+    expires_at: datetime | None = None
+    last_used: datetime | None = None
     usage_count: int = 0
-    meta: Dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
 
 
 class CredentialPool:
@@ -43,7 +43,7 @@ class CredentialPool:
     """
 
     def __init__(self):
-        self._credentials: Dict[str, Credential] = {}
+        self._credentials: dict[str, Credential] = {}
         self._load_from_config()
 
     def _load_from_config(self):
@@ -57,16 +57,16 @@ class CredentialPool:
         self._set_if_present("whatsapp", settings.WHATSAPP_ACCESS_TOKEN)
         self._set_if_present("vapi", settings.VAPI_API_KEY)
 
-    def _set_if_present(self, provider: str, key: Optional[str]):
+    def _set_if_present(self, provider: str, key: str | None):
         """Registrar credencial si la clave está presente."""
         if key:
             self._credentials[provider] = Credential(
                 provider=provider,
                 key=key,
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             )
 
-    async def get(self, provider: str) -> Optional[str]:
+    async def get(self, provider: str) -> str | None:
         """
         Obtener credencial para un provider.
 
@@ -83,13 +83,13 @@ class CredentialPool:
             return None
 
         # Verificar expiración
-        if cred.expires_at and cred.expires_at < datetime.now(timezone.utc):
+        if cred.expires_at and cred.expires_at < datetime.now(UTC):
             logger.warning(f"Credential expired for provider: {provider}")
             del self._credentials[provider]
             return None
 
         # Actualizar tracking de uso
-        cred.last_used = datetime.now(timezone.utc)
+        cred.last_used = datetime.now(UTC)
         cred.usage_count += 1
 
         return cred.key
@@ -108,11 +108,11 @@ class CredentialPool:
         self._credentials[provider] = Credential(
             provider=provider,
             key=key,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         logger.info(f"Registered credential for provider: {provider}")
 
-    async def get_all_providers(self) -> Dict[str, str]:
+    async def get_all_providers(self) -> dict[str, str]:
         """
         Listar todos los providers disponibles.
 
@@ -123,7 +123,7 @@ class CredentialPool:
 
 
 # Instancia global
-_credential_pool: Optional[CredentialPool] = None
+_credential_pool: CredentialPool | None = None
 
 
 def get_credential_pool() -> CredentialPool:
