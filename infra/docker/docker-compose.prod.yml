@@ -5,9 +5,21 @@
 #   - app: AI Platform backend (FastAPI + Ragnar)
 #   - postgres: Base de datos PostgreSQL
 #   - redis: Broker de Celery
+#   - nginx: Reverse proxy con HTTPS
+#
+# PUERTOS:
+#   - 80  → HTTP (redirige a 443)
+#   - 443 → HTTPS (nginx proxya a app:4000)
+#   - 5432 → PostgreSQL (SOLO interno, redes docker)
+#   - 6379 → Redis (SOLO interno, redes docker)
 #
 # Uso:
 #   docker compose -f infra/docker/docker-compose.prod.yml up -d
+#
+# Seguridad:
+#   - Solo 80 y 443 expuestos al exterior
+#   - PostgreSQL/Redis en red privada (ai-platform-network)
+#   - Let's Encrypt SSL con certbot montado en ./nginx/ssl
 # ============================================================
 
 services:
@@ -16,57 +28,76 @@ services:
     image: ghcr.io/${GITHUB_REPOSITORY:-jemadiar1/ai-platform}:${IMAGE_TAG:-latest}
     container_name: ai-platform-api
     restart: unless-stopped
-    ports:
-      - "4000:4000"
+    expose:
+      - "4000"
     environment:
       # Entorno
       - APP_ENV=production
       - ENVIRONMENT=production
       - DEBUG=false
-      
-      # Base de datos
+
+      # Base de datos (conectado a postgres container)
       - DATABASE_URL=postgresql+psycopg://aiplatform:${POSTGRES_PASSWORD}@postgres:5432/ai_platform
-      
-      # Redis
+
+      # Redis (conectado a redis container)
       - REDIS_URL=redis://redis:6379/0
-      
+
       # Seguridad
       - SECRET_KEY=${SECRET_KEY}
       - JWT_EXPIRATION_HOURS=24
-      
+
       # Clerk (Auth)
       - CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
       - CLERK_API_URL=https://api.clerk.com
-      
+
       # Stripe (Billing)
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
-      
+
       # LLM (Ragnar)
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - OPENROUTER_API_URL=https://openrouter.ai/api/v1
-      
+
+      # NaN Builders (GPU propia)
+      - NAN_API_KEY=${NAN_API_KEY}
+      - NAN_API_URL=${NAN_API_URL}
+      - LLM_PROVIDER=${LLM_PROVIDER:-nan}
+      - PRIMARY_MODEL=${PRIMARY_MODEL:-qwen3.6}
+      - FAST_MODEL=${FAST_MODEL:-qwen3.6}
+      - FALLBACK_MODEL=${FALLBACK_MODEL:-qwen/qwen-2.5-72b-instruct}
+
       # WhatsApp
       - WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID}
       - WHATSAPP_ACCESS_TOKEN=${WHATSAPP_ACCESS_TOKEN}
-      
+      - WHATSAPP_WEBHOOK_VERIFY_TOKEN=${WHATSAPP_WEBHOOK_VERIFY_TOKEN}
+
+      # Telegram
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+
+      # Discord
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - DISCORD_CHANNEL_ID=${DISCORD_CHANNEL_ID}
+
       # Vapi (Voz)
       - VAPI_API_KEY=${VAPI_API_KEY}
-      
+
       # Logging
       - LOG_LEVEL=INFO
-      
+
+      # CORS (actualizar con dominio real)
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,https://dashboard.tu-dominio.com}
+
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_started
-    
+
     volumes:
       - ai-platform-logs:/app/logs
     networks:
       - ai-platform-network
-    
+
     # Límites de recursos
     deploy:
       resources:
@@ -77,7 +108,7 @@ services:
           cpus: "0.5"
           memory: 256M
 
-  # ---- PostgreSQL ----
+  # ---- PostgreSQL (SOLO RED INTERNA) ----
   postgres:
     image: postgres:16-alpine
     container_name: ai-platform-postgres
@@ -87,7 +118,7 @@ services:
       - POSTGRES_USER=aiplatform
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
@@ -99,18 +130,39 @@ services:
       retries: 5
       start_period: 30s
 
-  # ---- Redis (Celery Broker) ----
+  # ---- Redis (SOLO RED INTERNA) ----
   redis:
     image: redis:7-alpine
     container_name: ai-platform-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
     networks:
       - ai-platform-network
     command: redis-server --appendonly yes
+
+  # ---- Nginx (Reverse Proxy + SSL) ----
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: ai-platform-nginx
+    restart: unless-stopped
+    environment:
+      - NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx
+      - NGINX_SERVER_NAME=${NGINX_SERVER_NAME:-localhost}
+      - NGINX_SSL_CERT_PATH=${NGINX_SSL_CERT_PATH:-/etc/nginx/ssl/live/localhost/fullchain.pem}
+      - NGINX_SSL_KEY_PATH=${NGINX_SSL_KEY_PATH:-/etc/nginx/ssl/live/localhost/privkey.pem}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
+      - ./nginx/ssl:/etc/nginx/ssl:rw
+    depends_on:
+      - app
+    networks:
+      - ai-platform-network
 
 # ============================================================
 # Volúmenes para persistencia
