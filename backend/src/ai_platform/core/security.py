@@ -165,7 +165,7 @@ class InjectionScanner:
 
     # Patrón 1: Prompt injection markers
     _SYSTEM_INJECTION = re.compile(
-        r'ignore\s+previous\s+instructions|disregard\s+all|bypass\s+all|forget\s+previous|new\s+rule',
+        r"ignore\s+previous\s+instructions|disregard\s+all|bypass\s+all|forget\s+previous|new\s+rule",
         re.IGNORECASE,
     )
 
