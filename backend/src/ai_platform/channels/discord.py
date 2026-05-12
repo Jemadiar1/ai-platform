@@ -33,9 +33,9 @@ class DiscordChannel(BaseChannel):
 
     channel = "discord"
 
-    def __init__(self):
+    def __init__(self, token: str | None = None):
         self.settings = get_settings()
-        self.token = self.settings.DISCORD_BOT_TOKEN
+        self.token = token if token is not None else self.settings.DISCORD_BOT_TOKEN
         self.channel_id = self.settings.DISCORD_CHANNEL_ID
         self.base_url = "https://discord.com/api/v10"
         self.headers = {

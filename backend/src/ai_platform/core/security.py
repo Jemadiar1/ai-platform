@@ -19,8 +19,9 @@ from ipaddress import ip_address, ip_network
 from typing import ClassVar
 from urllib.parse import urlparse
 
+import bcrypt as _bcrypt
+
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from ai_platform.core.config import get_settings
 
@@ -31,7 +32,10 @@ logger = logging.getLogger(__name__)
 # JWT & PASSWORDS
 # =========================================================================
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Use bcrypt directly to avoid passlib's known bug with bcrypt 5.x
+# (passlib's detect_wrap_bug triggers false "password cannot be longer
+# than 72 bytes" errors from bcrypt 5.0.0 internals)
+_BCRYPT_ROUNDS = 12
 
 
 def hash_password(password: str) -> str:
@@ -45,7 +49,9 @@ def hash_password(password: str) -> str:
         hashed = hash_password("mi-password-123")
         # "$2b$12$eXaMpLe$sAlTaNdHaShHeRe..."
     """
-    return pwd_context.hash(password)
+    salt = _bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)
+    hashed = _bcrypt.hashpw(password.encode("utf-8"), salt)
+    return hashed.decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -56,7 +62,13 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         if verify_password("mi-password-123", stored_hash):
             # Login exitoso
     """
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return _bcrypt.checkpw(
+            plain_password.encode("utf-8"),
+            hashed_password.encode("utf-8"),
+        )
+    except (ValueError, TypeError):
+        return False
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
@@ -556,11 +568,10 @@ class LRUCache:
         Retorna:
             True si se eliminó, False si no existía
         """
-        try:
-            self._cache.pop(key, None)
+        if key in self._cache:
+            del self._cache[key]
             return True
-        except KeyError:
-            return False
+        return False
 
     def clear(self) -> None:
         """Limpiar todo el cache."""

@@ -11,7 +11,6 @@ y solo implementa los métodos específicos del canal.
 
 import asyncio
 import logging
-from abc import ABC, abstractmethod
 from collections import defaultdict
 from typing import Any
 
@@ -65,7 +64,7 @@ class _RateLimiter:
         self._timestamps[channel_name].append(now)
 
 
-class BaseChannel(ABC):
+class BaseChannel:
     """
     Clase base abstracta para handlers de canales.
 
@@ -76,10 +75,9 @@ class BaseChannel(ABC):
     - extract_message(raw_payload): extraer user_id, message_text, chat_id
     """
 
-    channel: str
+    channel: str = ""
     _rate_limiter: _RateLimiter = _RateLimiter(max_per_second=10.0)
 
-    @abstractmethod
     async def send_message(self, chat_id: str, text: str, **kwargs: Any) -> Any:
         """
         Enviar un mensaje de respuesta al usuario.
@@ -94,7 +92,6 @@ class BaseChannel(ABC):
         """
         ...
 
-    @abstractmethod
     async def validate_webhook(self, payload: Any, headers: dict | None = None) -> dict:
         """
         Validar que el webhook es auténtico.
@@ -110,7 +107,6 @@ class BaseChannel(ABC):
         """
         ...
 
-    @abstractmethod
     async def extract_message(self, raw_payload: Any) -> dict[str, str]:
         """
         Extraer información del mensaje del payload del canal.

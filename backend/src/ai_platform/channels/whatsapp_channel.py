@@ -36,7 +36,7 @@ class WhatsAppChannel(BaseChannel):
 
     channel = "whatsapp"
 
-    def __init__(self):
+    def __init__(self, token: str | None = None):
         self.settings = get_settings()
         self.phone_number_id = self.settings.WHATSAPP_PHONE_NUMBER_ID
         self.access_token = self.settings.WHATSAPP_ACCESS_TOKEN

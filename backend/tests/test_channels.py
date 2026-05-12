@@ -30,7 +30,8 @@ from ai_platform.core.security import scanner, prompt_sanitizer
 class TestTelegramChannelValidateWebhook:
     """Tests reales que ejercitan TelegramChannel.validate_webhook()."""
 
-    def test_validate_webhook_valid_token_match(self):
+    @pytest.mark.asyncio
+    async def test_validate_webhook_valid_token_match(self):
         """Debe validar un webhook de Telegram cuando el token coincide."""
         from ai_platform.channels.telegram import TelegramChannel
 
@@ -46,10 +47,11 @@ class TestTelegramChannelValidateWebhook:
             },
         }
         headers = {"X-Telegram-Bot-Api-Secret-Token": "test_secret_token"}
-        result = channel.validate_webhook(payload, headers=headers)
+        result = await channel.validate_webhook(payload, headers=headers)
         assert result["valid"] is True
 
-    def test_validate_webhook_valid_structure(self):
+    @pytest.mark.asyncio
+    async def test_validate_webhook_valid_structure(self):
         """Debe validar un webhook con estructura correcta y token configurado."""
         from ai_platform.channels.telegram import TelegramChannel
 
@@ -64,10 +66,11 @@ class TestTelegramChannelValidateWebhook:
                 "date": 1234567890,
             },
         }
-        result = channel.validate_webhook(payload)
+        result = await channel.validate_webhook(payload)
         assert result["valid"] is True
 
-    def test_validate_webhook_rejects_bot_messages(self):
+    @pytest.mark.asyncio
+    async def test_validate_webhook_rejects_bot_messages(self):
         """Debe rechazar mensajes que provienen de otros bots."""
         from ai_platform.channels.telegram import TelegramChannel
 
@@ -81,39 +84,43 @@ class TestTelegramChannelValidateWebhook:
                 "text": "Soy un bot",
             },
         }
-        result = channel.validate_webhook(payload)
+        result = await channel.validate_webhook(payload)
         assert result["valid"] is False
 
-    def test_validate_webhook_missing_update_id(self):
+    @pytest.mark.asyncio
+    async def test_validate_webhook_missing_update_id(self):
         """Debe rechazar payloads sin update_id."""
         from ai_platform.channels.telegram import TelegramChannel
 
         channel = TelegramChannel(token="test_token")
         payload = {"message": {"text": "sin update_id"}}
-        result = channel.validate_webhook(payload)
+        result = await channel.validate_webhook(payload)
         assert result["valid"] is False
 
-    def test_validate_webhook_non_dict_payload(self):
+    @pytest.mark.asyncio
+    async def test_validate_webhook_non_dict_payload(self):
         """Debe rechazar payloads que no sean dict."""
         from ai_platform.channels.telegram import TelegramChannel
 
         channel = TelegramChannel(token="test_token")
-        result = channel.validate_webhook("not a dict")
+        result = await channel.validate_webhook("not a dict")
         assert result["valid"] is False
 
-    def test_validate_webhook_no_token_skips_validation(self):
+    @pytest.mark.asyncio
+    async def test_validate_webhook_no_token_skips_validation(self):
         """Si no hay token, la validación se salta (retorna True)."""
         from ai_platform.channels.telegram import TelegramChannel
 
         channel = TelegramChannel(token="")
-        result = channel.validate_webhook({"update_id": 1})
+        result = await channel.validate_webhook({"update_id": 1})
         assert result["valid"] is True
 
 
 class TestTelegramChannelExtractMessage:
     """Tests reales que ejercitan TelegramChannel.extract_message()."""
 
-    def test_extract_message_private_chat(self):
+    @pytest.mark.asyncio
+    async def test_extract_message_private_chat(self):
         """Debe extraer info correctamente de un chat privado."""
         from ai_platform.channels.telegram import TelegramChannel
 
@@ -128,13 +135,14 @@ class TestTelegramChannelExtractMessage:
                 "date": 1234567890,
             },
         }
-        result = channel.extract_message(payload)
+        result = await channel.extract_message(payload)
         assert result["user_id"] == "123"
         assert result["user_name"] == "Juan"
         assert result["message_text"] == "Hola, necesito ayuda"
         assert result["chat_id"] == "456"
 
-    def test_extract_message_edited(self):
+    @pytest.mark.asyncio
+    async def test_extract_message_edited(self):
         """Debe extraer info de un mensaje editado."""
         from ai_platform.channels.telegram import TelegramChannel
 
@@ -148,28 +156,31 @@ class TestTelegramChannelExtractMessage:
                 "text": "Mensaje editado",
             },
         }
-        result = channel.extract_message(payload)
+        result = await channel.extract_message(payload)
         assert result["user_id"] == "999"
         assert result["message_text"] == "Mensaje editado"
 
-    def test_extract_message_empty_payload(self):
+    @pytest.mark.asyncio
+    async def test_extract_message_empty_payload(self):
         """Debe retornar valores vacíos para un payload inválido."""
         from ai_platform.channels.telegram import TelegramChannel
 
         channel = TelegramChannel(token="test")
-        result = channel.extract_message({"no_valid_campo": "xxx"})
+        result = await channel.extract_message({"no_valid_campo": "xxx"})
         assert result["user_id"] == ""
         assert result["message_text"] == ""
 
-    def test_extract_message_non_dict(self):
+    @pytest.mark.asyncio
+    async def test_extract_message_non_dict(self):
         """Debe retornar valores vacíos para un payload no-dict."""
         from ai_platform.channels.telegram import TelegramChannel
 
         channel = TelegramChannel(token="test")
-        result = channel.extract_message("string")
+        result = await channel.extract_message("string")
         assert result["user_id"] == ""
 
-    def test_extract_message_group_chat(self):
+    @pytest.mark.asyncio
+    async def test_extract_message_group_chat(self):
         """Debe extraer info correctamente de un chat de grupo."""
         from ai_platform.channels.telegram import TelegramChannel
 
@@ -183,7 +194,7 @@ class TestTelegramChannelExtractMessage:
                 "text": "Mensaje en grupo",
             },
         }
-        result = channel.extract_message(payload)
+        result = await channel.extract_message(payload)
         assert result["user_id"] == "111"
         assert result["chat_id"] == "-1001234567890"
         assert result["message_text"] == "Mensaje en grupo"
@@ -233,7 +244,8 @@ class TestTelegramChannelSendMessage:
 class TestDiscordChannelValidateWebhook:
     """Tests reales que ejercitan DiscordChannel.validate_webhook()."""
 
-    def test_validate_webhook_valid_message(self):
+    @pytest.mark.asyncio
+    async def test_validate_webhook_valid_message(self):
         """Debe validar un mensaje de Discord con token configurado."""
         from ai_platform.channels.discord import DiscordChannel
 
@@ -244,10 +256,11 @@ class TestDiscordChannelValidateWebhook:
             "author": {"id": "999", "username": "testuser", "bot": False},
             "channel_id": "789",
         }
-        result = channel.validate_webhook(payload)
+        result = await channel.validate_webhook(payload)
         assert result["valid"] is True
 
-    def test_validate_webhook_rejects_bot_messages(self):
+    @pytest.mark.asyncio
+    async def test_validate_webhook_rejects_bot_messages(self):
         """Debe rechazar mensajes enviados por su propio bot."""
         from ai_platform.channels.discord import DiscordChannel
 
@@ -258,28 +271,31 @@ class TestDiscordChannelValidateWebhook:
             "author": {"id": "BOT_ID", "username": "MiBot", "bot": True},
             "channel_id": "789",
         }
-        result = channel.validate_webhook(payload)
+        result = await channel.validate_webhook(payload)
         assert result["valid"] is False
 
-    def test_validate_webhook_no_token(self):
+    @pytest.mark.asyncio
+    async def test_validate_webhook_no_token(self):
         """Debe rechazar cuando no hay token configurado."""
         from ai_platform.channels.discord import DiscordChannel
 
         channel = DiscordChannel(token="")
         payload = {"content": "test"}
-        result = channel.validate_webhook(payload)
+        result = await channel.validate_webhook(payload)
         assert result["valid"] is False
 
-    def test_validate_webhook_challenge_type_1(self):
+    @pytest.mark.asyncio
+    async def test_validate_webhook_challenge_type_1(self):
         """Debe aceptar challenge de verificación (type 1)."""
         from ai_platform.channels.discord import DiscordChannel
 
         channel = DiscordChannel(token="valid_token")
         payload = {"type": 1}
-        result = channel.validate_webhook(payload)
+        result = await channel.validate_webhook(payload)
         assert result["valid"] is True
 
-    def test_validate_webhook_slash_command_valid(self):
+    @pytest.mark.asyncio
+    async def test_validate_webhook_slash_command_valid(self):
         """Debe validar slash commands con estructura correcta."""
         from ai_platform.channels.discord import DiscordChannel
 
@@ -289,49 +305,54 @@ class TestDiscordChannelValidateWebhook:
             "data": {"name": "ask", "options": []},
             "member": {"user": {"id": "111", "username": "test"}},
         }
-        result = channel.validate_webhook(payload)
+        result = await channel.validate_webhook(payload)
         assert result["valid"] is True
 
-    def test_validate_webhook_slash_command_invalid(self):
+    @pytest.mark.asyncio
+    async def test_validate_webhook_slash_command_invalid(self):
         """Debe rechazar slash commands sin estructura válida."""
         from ai_platform.channels.discord import DiscordChannel
 
         channel = DiscordChannel(token="valid_token")
         payload = {"type": 2}
-        result = channel.validate_webhook(payload)
+        result = await channel.validate_webhook(payload)
         assert result["valid"] is False
 
-    def test_validate_webhook_empty_content(self):
+    @pytest.mark.asyncio
+    async def test_validate_webhook_empty_content(self):
         """Debe rechazar mensajes vacíos."""
         from ai_platform.channels.discord import DiscordChannel
 
         channel = DiscordChannel(token="valid_token")
         payload = {"content": ""}
-        result = channel.validate_webhook(payload)
+        result = await channel.validate_webhook(payload)
         assert result["valid"] is True  # content vacío pero estructura válida
 
-    def test_validate_webhook_non_dict(self):
+    @pytest.mark.asyncio
+    async def test_validate_webhook_non_dict(self):
         """Debe rechazar payloads no-dict."""
         from ai_platform.channels.discord import DiscordChannel
 
         channel = DiscordChannel(token="valid_token")
-        result = channel.validate_webhook("not a dict")
+        result = await channel.validate_webhook("not a dict")
         assert result["valid"] is False
 
-    def test_validate_webhook_unknown_structure(self):
+    @pytest.mark.asyncio
+    async def test_validate_webhook_unknown_structure(self):
         """Debe rechazar payloads con estructura no reconocida."""
         from ai_platform.channels.discord import DiscordChannel
 
         channel = DiscordChannel(token="valid_token")
         payload = {"strange_field": "value"}
-        result = channel.validate_webhook(payload)
+        result = await channel.validate_webhook(payload)
         assert result["valid"] is False
 
 
 class TestDiscordChannelExtractMessage:
     """Tests de extracción de mensajes de Discord."""
 
-    def test_extract_regular_message(self):
+    @pytest.mark.asyncio
+    async def test_extract_regular_message(self):
         """Debe extraer un mensaje normal de Discord."""
         from ai_platform.channels.discord import DiscordChannel
 
@@ -342,13 +363,14 @@ class TestDiscordChannelExtractMessage:
             "content": "Necesito ayuda con mi cuenta",
             "channel_id": "ch_789",
         }
-        result = channel.extract_message(payload)
+        result = await channel.extract_message(payload)
         assert result["user_id"] == "user_456"
         assert result["user_name"] == "Juan"
         assert result["message_text"] == "Necesito ayuda con mi cuenta"
         assert result["chat_id"] == "ch_789"
 
-    def test_extract_slash_command(self):
+    @pytest.mark.asyncio
+    async def test_extract_slash_command(self):
         """Debe extraer un slash command."""
         from ai_platform.channels.discord import DiscordChannel
 
@@ -359,11 +381,12 @@ class TestDiscordChannelExtractMessage:
             "member": {"user": {"id": "user_100", "username": "Maria"}},
             "channel_id": "ch_200",
         }
-        result = channel.extract_message(payload)
+        result = await channel.extract_message(payload)
         assert result["user_id"] == "user_100"
         assert result["message_text"] == "ayuda"
 
-    def test_extract_mentions_removed(self):
+    @pytest.mark.asyncio
+    async def test_extract_mentions_removed(self):
         """Debe eliminar menciones del bot del texto."""
         from ai_platform.channels.discord import DiscordChannel
 
@@ -374,14 +397,15 @@ class TestDiscordChannelExtractMessage:
             "content": "<@123> ayuda",
             "channel_id": "ch_1",
         }
-        result = channel.extract_message(payload)
+        result = await channel.extract_message(payload)
         assert result["message_text"] == "ayuda"
 
 
 class TestWhatsAppChannelExtractMessage:
     """Tests reales que ejercitan WhatsAppChannel.extract_message()."""
 
-    def test_extract_text_message(self):
+    @pytest.mark.asyncio
+    async def test_extract_text_message(self):
         """Debe extraer un mensaje de texto de WhatsApp."""
         from ai_platform.channels.whatsapp_channel import WhatsAppChannel
 
@@ -402,12 +426,13 @@ class TestWhatsAppChannelExtractMessage:
                 }]
             }]
         }
-        result = channel.extract_message(payload)
+        result = await channel.extract_message(payload)
         assert result["user_id"] == "59177777777"
         assert result["user_name"] == "Juan"
         assert result["message_text"] == "Hola, quiero información"
 
-    def test_extract_button_message(self):
+    @pytest.mark.asyncio
+    async def test_extract_button_message(self):
         """Debe extraer un mensaje de botón."""
         from ai_platform.channels.whatsapp_channel import WhatsAppChannel
 
@@ -425,32 +450,35 @@ class TestWhatsAppChannelExtractMessage:
                 }]
             }]
         }
-        result = channel.extract_message(payload)
+        result = await channel.extract_message(payload)
         assert result["message_text"] == "Sí, quiero info"
 
-    def test_extract_no_entries(self):
+    @pytest.mark.asyncio
+    async def test_extract_no_entries(self):
         """Debe retornar vacío para payload sin entries."""
         from ai_platform.channels.whatsapp_channel import WhatsAppChannel
 
         channel = WhatsAppChannel()
-        result = channel.extract_message({"not_entries": "value"})
+        result = await channel.extract_message({"not_entries": "value"})
         assert result["message_text"] == ""
         assert result["user_id"] == ""
 
-    def test_extract_no_messages(self):
+    @pytest.mark.asyncio
+    async def test_extract_no_messages(self):
         """Debe retornar vacío para payload sin messages."""
         from ai_platform.channels.whatsapp_channel import WhatsAppChannel
 
         channel = WhatsAppChannel()
         payload = {"entry": [{"changes": [{"value": {"contacts": [], "messages": []}}]}]}
-        result = channel.extract_message(payload)
+        result = await channel.extract_message(payload)
         assert result["message_text"] == ""
 
 
 class TestWhatsAppChannelValidateWebhook:
     """Tests de validación de webhooks de WhatsApp."""
 
-    def test_validate_webhook_valid_structure(self):
+    @pytest.mark.asyncio
+    async def test_validate_webhook_valid_structure(self):
         """Debe validar un webhook con estructura correcta."""
         from ai_platform.channels.whatsapp_channel import WhatsAppChannel
 
@@ -467,8 +495,55 @@ class TestWhatsAppChannelValidateWebhook:
                 }]
             }]
         }
-        result = channel.validate_webhook(payload)
+        result = await channel.validate_webhook(payload)
         assert result["valid"] is True
+
+    @pytest.mark.asyncio
+    async def test_validate_webhook_no_entries(self):
+        """Debe rechazar webhooks sin entries."""
+        from ai_platform.channels.whatsapp_channel import WhatsAppChannel
+
+        channel = WhatsAppChannel()
+        result = await channel.validate_webhook({"entry": []})
+        assert result["valid"] is False
+
+    @pytest.mark.asyncio
+    async def test_validate_webhook_no_from(self):
+        """Debe rechazar mensajes sin 'from'."""
+        from ai_platform.channels.whatsapp_channel import WhatsAppChannel
+
+        channel = WhatsAppChannel()
+        payload = {
+            "entry": [{
+                "changes": [{
+                    "value": {
+                        "messages": [{"from": "", "text": {"body": "test"}}]
+                    }
+                }]
+            }]
+        }
+        result = await channel.validate_webhook(payload)
+        assert result["valid"] is False
+
+    @pytest.mark.asyncio
+    async def test_validate_webhook_no_signature(self):
+        """Validación pasa sin firma configurada."""
+        from ai_platform.channels.whatsapp_channel import WhatsAppChannel
+
+        with patch.object(WhatsAppChannel, "__init__", lambda self: None):
+            channel = WhatsAppChannel()
+            channel.settings = MagicMock(WHATSAPP_APP_SECRET=None)
+            payload = {
+                "entry": [{
+                    "changes": [{
+                        "value": {
+                            "messages": [{"from": "123", "type": "text"}]
+                        }
+                    }]
+                }]
+            }
+            result = await channel.validate_webhook(payload)
+            assert result["valid"] is True
 
     def test_validate_webhook_no_entries(self):
         """Debe rechazar webhooks sin entries."""
@@ -520,15 +595,15 @@ class TestMessageChunking:
 
     def test_chunk_message_short_text(self):
         """Texto corto no debe dividirse."""
-        from ai_platform.channels.base import BaseChannel
-        channel = BaseChannel()
+        from ai_platform.channels.telegram import TelegramChannel
+        channel = TelegramChannel(token="test")
         chunks = channel._chunk_message("Hola", 20)
         assert chunks == ["Hola"]
 
     def test_chunk_message_respects_word_boundaries(self):
         """Debe respetar límites de palabra al dividir."""
-        from ai_platform.channels.base import BaseChannel
-        channel = BaseChannel()
+        from ai_platform.channels.telegram import TelegramChannel
+        channel = TelegramChannel(token="test")
         text = "Esta es una prueba de chunking que debe respetar límites de palabra"
         chunks = channel._chunk_message(text, 20)
         assert len(chunks) > 1
@@ -537,16 +612,16 @@ class TestMessageChunking:
 
     def test_chunk_message_very_long(self):
         """Texto muy largo debe dividirse en múltiple chunk."""
-        from ai_platform.channels.base import BaseChannel
-        channel = BaseChannel()
+        from ai_platform.channels.telegram import TelegramChannel
+        channel = TelegramChannel(token="test")
         long_text = "A " * 500  # ~1000 chars
         chunks = channel._chunk_message(long_text, 50)
         assert len(chunks) > 1
 
     def test_chunk_message_empty(self):
         """Texto vacío debe retornar lista vacía."""
-        from ai_platform.channels.base import BaseChannel
-        channel = BaseChannel()
+        from ai_platform.channels.telegram import TelegramChannel
+        channel = TelegramChannel(token="test")
         chunks = channel._chunk_message("", 100)
         assert chunks == [""]
 

@@ -32,9 +32,9 @@ class TelegramChannel(BaseChannel):
 
     channel = "telegram"
 
-    def __init__(self):
+    def __init__(self, token: str | None = None):
         self.settings = get_settings()
-        self.token = self.settings.TELEGRAM_BOT_TOKEN
+        self.token = token if token is not None else self.settings.TELEGRAM_BOT_TOKEN
         self.base_url = f"https://api.telegram.org/bot{self.token}" if self.token else ""
 
     async def validate_webhook(self, payload: Any, headers: dict | None = None) -> dict:
