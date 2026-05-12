@@ -74,14 +74,15 @@ def main():
     print("=" * 60)
     print()
 
-        # Paso 1: Conectar
-        print("[1/6] Conectando al VPS...")
+    # Paso 1: Conectar
+    print("[1/6] Conectando al VPS...")
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
+    connected = False
     try:
         if VPS_SSH_KEY:
-            print(f"  Using SSH key: {VPS_SSH_KEY}")
+            print(f"  Intentando key SSH: {VPS_SSH_KEY}...")
             ssh.connect(
                 VPS_HOST,
                 port=VPS_PORT,
@@ -90,10 +91,20 @@ def main():
                 timeout=15,
                 allow_agent=False,
                 look_for_keys=False,
-                missing_host_key_policy=lambda x: None,  # Permitir conexión si ya está en known_hosts
             )
-        else:
-            print("  Using password authentication.")
+            print("  ¡Conectado con key SSH!")
+            connected = True
+    except (paramiko.AuthenticationException, paramiko.SSHException):
+        print("  Key SSH no funciona, intentando password...")
+    except Exception as e:
+        print(f"  Error con key: {e}")
+
+    if not connected:
+        if not VPS_SSH_PASS:
+            print("  ERROR: Ninguna autenticación disponible (key ni password).")
+            return 1
+        print(f"  Usando password para {VPS_USER}@{VPS_HOST}...")
+        try:
             ssh.connect(
                 VPS_HOST,
                 port=VPS_PORT,
@@ -101,13 +112,14 @@ def main():
                 password=VPS_SSH_PASS,
                 timeout=15,
             )
-        print("  ¡Conectado!")
-    except paramiko.SSHException as e:
-        print(f"  ERROR: {e}")
-        print("  NOTA: Si es la primera conexión, configure StrictHostKeyChecking=no o use SSH key.")
-        return 1
-    except Exception as e:
-        print(f"  ERROR: {e}")
+            print("  ¡Conectado con password!")
+            connected = True
+        except Exception as e:
+            print(f"  ERROR: {e}")
+            return 1
+
+    if not connected:
+        print("  ERROR: No se pudo conectar.")
         return 1
 
     try:
