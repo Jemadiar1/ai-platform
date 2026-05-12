@@ -1,0 +1,33 @@
+# Backend Python - ignorar solo artefactos, NO el código fuente
+backend/__pycache__/
+backend/src/__pycache__/
+backend/src/ai_platform/__pycache__/
+backend/src/ai_platform/**/*.pyc
+backend/src/ai_platform/**/*.pyo
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/venv/
+backend/.venv/
+backend/poetry.lock
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.development
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
