@@ -580,7 +580,7 @@ async def _process_channel_message(
     """
     Procesar mensaje de cualquier canal de forma unificada.
 
-    Este método conecta el webhook del canal con el flujo de Ragnar:
+    Este método conecta el webhook del canal con el flujo de Ragnar completo:
     1. Buscar o crear mapeo de canal → usuario de plataforma
     2. Llamar a Ragnar.decide() para routing del módulo
     3. Ejecutar el módulo seleccionado
@@ -600,7 +600,6 @@ async def _process_channel_message(
     from ai_platform.models.channel_mapping import get_or_create_channel_mapping
     from ai_platform.orchestrator.ragnar import get_ragnar
 
-    # Obtener instancias
     ragnar = get_ragnar()
 
     # Paso 1: Buscar mapeo de canal externo → usuario de plataforma
@@ -633,22 +632,179 @@ async def _process_channel_message(
         )
     except Exception as e:
         logger.error(f"Error en Ragnar.decide(): {e}")
+        await _send_channel_error(channel, chat_id, "Error interno")
         return {"status": "error", "message": str(e)}
 
     session_id = decision.get("session_id")
+    module_name = decision["module"]
+    action = decision["action"]
+    params = decision.get("params", {})
 
     # Paso 3: Actualizar session_id en mapeo
     if session_id:
         channel_update_channel(session_id=session_id, channel=channel, chat_id=chat_id)
 
+    # Paso 4: Ejecutar el módulo seleccionado
+    try:
+        module_result = await _execute_module(
+            module_name=module_name,
+            action=action,
+            params=params,
+            tenant_id=tenant_id,
+            user_id=user_id_platform,
+            channel=channel,
+            chat_id=chat_id,
+            message_text=message_text,
+        )
+    except Exception as e:
+        logger.error(f"Error ejecutando módulo {module_name}: {e}")
+        await _send_channel_error(channel, chat_id, "Error procesando tu solicitud")
+        return {
+            "status": "error",
+            "message": f"Error ejecutando módulo {module_name}: {e!s}",
+            "module": module_name,
+        }
+
+    # Paso 5: Enviar respuesta de vuelta al canal
+    response_text = _extract_response_text(module_result)
+    if response_text:
+        await _send_to_channel(channel, chat_id, response_text)
+
     return {
         "status": "success",
         "channel": channel,
-        "module": decision["module"],
-        "session_id": decision["session_id"],
-        "action": decision["action"],
+        "module": module_name,
+        "session_id": session_id,
+        "action": action,
         "confidence": decision.get("confidence"),
     }
+
+
+async def _send_channel_error(channel: str, chat_id: str | None, error_message: str) -> None:
+    """Enviar un mensaje de error al usuario en el canal correspondiente."""
+    await _send_to_channel(channel, chat_id, error_message)
+
+
+async def _send_to_channel(channel: str, chat_id: str | None, text: str) -> None:
+    """Enviar texto al canal apropiado usando el channel manager."""
+    from ai_platform.channels import DiscordChannel, TelegramChannel, WhatsAppChannel
+
+    if not chat_id:
+        return
+
+    channel_map = {
+        "telegram": lambda: TelegramChannel(),
+        "discord": lambda: DiscordChannel(),
+        "whatsapp": lambda: WhatsAppChannel(),
+    }
+
+    channel_instance_factory = channel_map.get(channel)
+    if not channel_instance_factory:
+        return
+
+    try:
+        channel_instance = channel_instance_factory()
+        await channel_instance.send_message(chat_id=chat_id, text=text)
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Error enviando al canal {channel}: {e}")
+
+
+def _extract_response_text(module_result: Any) -> str:
+    """Extraer texto legible del resultado del módulo."""
+    if isinstance(module_result, dict):
+        # Prioridad: result > response > message > datos
+        for key in ("result", "response", "message", "text"):
+            if key in module_result:
+                val = module_result[key]
+                if isinstance(val, str) and val.strip():
+                    return val[:4096]
+        # Si hay cualquier campo con string, usar el primero
+        for val in module_result.values():
+            if isinstance(val, str) and val.strip():
+                return val[:4096]
+        if "error" in module_result:
+            return "Error: " + module_result["error"]
+    elif isinstance(module_result, str) and module_result.strip():
+        return module_result[:4096]
+    return ""
+
+
+async def _execute_module(
+    module_name: str,
+    action: str,
+    params: dict[str, Any],
+    tenant_id: str,
+    user_id: str,
+    channel: str,
+    chat_id: str,
+    message_text: str,
+) -> dict[str, Any]:
+    """Ejecutar el módulo seleccionado dinámicamente."""
+    module_handlers: dict[str, str] = {
+        "ai-connect": "ai_platform.modules.ai_connect.handler",
+        "ai-content": "ai_platform.modules.ai_content.handler",
+        "ai-social": "ai_platform.modules.ai_social.handler",
+        "ai-leads": "ai_platform.modules.ai_leads.handler",
+        "ai-ads": "ai_platform.modules.ai_ads.handler",
+        "ai-analytics": "ai_platform.modules.ai_analytics.handler",
+        "ai-web": "ai_platform.modules.ai_web.handler",
+    }
+
+    import asyncio
+    import importlib
+    import os
+    import sys
+
+    handler_module_path = module_handlers.get(module_name)
+    if not handler_module_path:
+        return {
+            "module": module_name,
+            "status": "failed",
+            "error": f"Módulo {module_name} no tiene handler",
+        }
+
+    try:
+        # Agregar backend/src al sys.path para imports dinámicos
+
+        src_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        if src_path not in sys.path:
+            sys.path.insert(0, src_path)
+
+        handler_module = importlib.import_module(handler_module_path)
+        execute_func = getattr(handler_module, "execute", None) or getattr(
+            handler_module, "execute_async", None
+        )
+
+        if execute_func is None:
+            return {
+                "module": module_name,
+                "status": "failed",
+                "error": f"Handler {module_name} no tiene función execute",
+            }
+
+        payload = {
+            "module": module_name,
+            "action": action,
+            "params": {**params, "chat_id": chat_id, "channel": channel},
+            "metadata": {
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+                "chat_id": chat_id,
+                "channel": channel,
+                "message_text": message_text,
+            },
+        }
+
+        if asyncio.iscoroutinefunction(execute_func):
+            return await execute_func(payload)
+        else:
+            return execute_func(payload)
+    except Exception as e:
+        return {
+            "module": module_name,
+            "status": "failed",
+            "error": str(e),
+        }
 
 
 def channel_update_channel(session_id: str, channel: str, chat_id: str):
