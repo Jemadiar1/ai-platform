@@ -266,15 +266,8 @@ class Ragnar:
         session_id = decision.get("session_id")
 
         # Validar que el módulo sea soportado
-        SUPPORTED_MODULES = {
-            "ai-connect",
-            "ai-social",
-            "ai-web",
-            "ai-content",
-            "ai-marketing",
-            "ai-sales",
-        }
-        if module not in SUPPORTED_MODULES and module != "uncategorized":
+        supported_modules = {"ai-connect", "ai-social", "ai-web", "ai-content", "ai-marketing", "ai-sales"}
+        if module not in supported_modules and module != "uncategorized":
             self.trajectory_manager.add_step(
                 session_id,
                 Step(
@@ -284,11 +277,8 @@ class Ragnar:
                 ),
             )
             return {
-                "module": module,
                 "status": "error",
-                "result": {
-                    "error": f"El módulo '{module}' no es soportado",
-                },
+                "error": f"El módulo '{module}' no es soportado",
             }
 
         if module == "uncategorized":
