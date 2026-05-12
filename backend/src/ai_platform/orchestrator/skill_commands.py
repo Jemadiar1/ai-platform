@@ -25,8 +25,9 @@ Patrones implementados:
 """
 
 import logging
-from typing import Callable, Dict, Any, Optional, Awaitable
+from collections.abc import Callable
 from datetime import datetime
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ class SkillCommand:
         self.handler = handler
         self.cooldown_seconds = cooldown_seconds
         self.requires_auth = requires_auth
-        self.last_used: Optional[datetime] = None
+        self.last_used: datetime | None = None
 
     def can_execute(self, tenant_id: str) -> bool:
         """
@@ -100,7 +101,7 @@ class SkillCommandManager:
     """
 
     def __init__(self):
-        self._commands: Dict[str, SkillCommand] = {}
+        self._commands: dict[str, SkillCommand] = {}
         self._register_builtins()
 
     def _register_builtins(self):
@@ -208,17 +209,15 @@ class SkillCommandManager:
             cooldown_seconds: Tiempo mínimo entre ejecuciones
             requires_auth: Si necesita tenant válido para ejecutarse
         """
-        self._commands[name] = SkillCommand(
-            name, description, handler, cooldown_seconds, requires_auth
-        )
+        self._commands[name] = SkillCommand(name, description, handler, cooldown_seconds, requires_auth)
 
     async def execute(
         self,
         name: str,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         tenant_id: str,
         session_id: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Ejecutar un comando.
 
@@ -266,7 +265,7 @@ class SkillCommandManager:
             logger.error(f"Error executing command /{cmd_name}: {e}")
             return {
                 "success": False,
-                "error": f"Error ejecutando comando: {str(e)}",
+                "error": f"Error ejecutando comando: {e!s}",
             }
 
     def list_all(self) -> list:
@@ -289,7 +288,7 @@ class SkillCommandManager:
     # Handler implementations (async)
     # ------------------------------------------------------------------
 
-    async def _cmd_help(self, params: Dict[str, Any], tenant_id: str, session_id: str) -> Dict[str, Any]:
+    async def _cmd_help(self, params: dict[str, Any], tenant_id: str, session_id: str) -> dict[str, Any]:
         """
         Muestra la ayuda con todos los comandos disponibles.
 
@@ -311,7 +310,7 @@ class SkillCommandManager:
         response += "\nUsa cualquier comando escribiendo /<nombre> en tu mensaje."
         return {"response": response}
 
-    async def _cmd_reset(self, params: Dict[str, Any], tenant_id: str, session_id: str) -> Dict[str, Any]:
+    async def _cmd_reset(self, params: dict[str, Any], tenant_id: str, session_id: str) -> dict[str, Any]:
         """
         Resetea la conversación actual.
 
@@ -338,7 +337,7 @@ class SkillCommandManager:
 
         return {"response": "Conversación reseteada. El contexto ha sido limpiado."}
 
-    async def _cmd_memory(self, params: Dict[str, Any], tenant_id: str, session_id: str) -> Dict[str, Any]:
+    async def _cmd_memory(self, params: dict[str, Any], tenant_id: str, session_id: str) -> dict[str, Any]:
         """
         Muestra el estado de la memoria.
 
@@ -372,7 +371,7 @@ class SkillCommandManager:
             logger.error(f"Error getting memory status: {e}")
             return {"response": "Error al obtener estado de memoria: " + str(e)}
 
-    async def _cmd_budget(self, params: Dict[str, Any], tenant_id: str, session_id: str) -> Dict[str, Any]:
+    async def _cmd_budget(self, params: dict[str, Any], tenant_id: str, session_id: str) -> dict[str, Any]:
         """
         Muestra el presupuesto usado.
 
@@ -405,7 +404,7 @@ class SkillCommandManager:
             logger.error(f"Error getting budget status: {e}")
             return {"response": "Error al obtener estado de presupuesto: " + str(e)}
 
-    async def _cmd_skills(self, params: Dict[str, Any], tenant_id: str, session_id: str) -> Dict[str, Any]:
+    async def _cmd_skills(self, params: dict[str, Any], tenant_id: str, session_id: str) -> dict[str, Any]:
         """
         Muestra las skills disponibles.
 
@@ -436,7 +435,7 @@ class SkillCommandManager:
         response += "\nRagnar selecciona automáticamente el skill más apropiado."
         return {"response": response}
 
-    async def _cmd_model(self, params: Dict[str, Any], tenant_id: str, session_id: str) -> Dict[str, Any]:
+    async def _cmd_model(self, params: dict[str, Any], tenant_id: str, session_id: str) -> dict[str, Any]:
         """
         Cambiar el modelo LLM.
 
@@ -478,7 +477,9 @@ class SkillCommandManager:
         elif action == "set":
             model = params.get("model")
             if not model:
-                return {"response": "Uso: /model set <nombre_del_modelo>. Escribe /model list para ver los disponibles."}
+                return {
+                    "response": "Uso: /model set <nombre_del_modelo>. Escribe /model list para ver los disponibles."
+                }
 
             from ai_platform.orchestrator.pricing import get_model_pricing, is_model_free
 
@@ -490,13 +491,13 @@ class SkillCommandManager:
                     f"Modelo cambiado a: {model}\n"
                     f"  Categoría: {pricing['category']}\n"
                     f"  Precio: ${pricing['input_price_per_1m']:.2f}→${pricing['output_price_per_1m']:.2f}/1M tokens"
-                    f" {"(gratuito)" if free else ""}"
+                    f" {'(gratuito)' if free else ''}"
                 ),
             }
 
         return {"response": "Uso: /model list | /model set <nombre_modelo>"}
 
-    async def _cmd_clear(self, params: Dict[str, Any], tenant_id: str, session_id: str) -> Dict[str, Any]:
+    async def _cmd_clear(self, params: dict[str, Any], tenant_id: str, session_id: str) -> dict[str, Any]:
         """
         Limpia el historial de mensajes.
 
@@ -523,7 +524,7 @@ class SkillCommandManager:
 
         return {"response": "Historial de mensajes limpiado."}
 
-    async def _cmd_summarize(self, params: Dict[str, Any], tenant_id: str, session_id: str) -> Dict[str, Any]:
+    async def _cmd_summarize(self, params: dict[str, Any], tenant_id: str, session_id: str) -> dict[str, Any]:
         """
         Genera un resumen de la sesión.
 
@@ -562,7 +563,7 @@ class SkillCommandManager:
             logger.error(f"Error generating summary: {e}")
             return {"response": "Error al generar el resumen: " + str(e)}
 
-    async def _cmd_export(self, params: Dict[str, Any], tenant_id: str, session_id: str) -> Dict[str, Any]:
+    async def _cmd_export(self, params: dict[str, Any], tenant_id: str, session_id: str) -> dict[str, Any]:
         """
         Exporta la conversación actual en formato JSON.
 
@@ -600,7 +601,7 @@ class SkillCommandManager:
             logger.error(f"Error exporting conversation: {e}")
             return {"response": "Error al exportar la conversación: " + str(e)}
 
-    async def _cmd_import(self, params: Dict[str, Any], tenant_id: str, session_id: str) -> Dict[str, Any]:
+    async def _cmd_import(self, params: dict[str, Any], tenant_id: str, session_id: str) -> dict[str, Any]:
         """
         Importa una conversación guardada.
 
@@ -637,7 +638,7 @@ class SkillCommandManager:
             logger.error(f"Error importing conversation: {e}")
             return {"response": "Error al importar la conversación: " + str(e)}
 
-    async def _cmd_status(self, params: Dict[str, Any], tenant_id: str, session_id: str) -> Dict[str, Any]:
+    async def _cmd_status(self, params: dict[str, Any], tenant_id: str, session_id: str) -> dict[str, Any]:
         """
         Muestra el estado actual del sistema.
 
@@ -660,9 +661,9 @@ class SkillCommandManager:
         limits = tracker.get_all_limits()
 
         response = "Estado del sistema:\n\n"
-        response += f"  LLM (OpenRouter): connected\n"
-        response += f"  Base de datos: connected\n"
-        response += f"  Motor de decisiones: activo\n\n"
+        response += "  LLM (OpenRouter): connected\n"
+        response += "  Base de datos: connected\n"
+        response += "  Motor de decisiones: activo\n\n"
         response += "  Límites de tasa:\n"
         for service, info in limits.items():
             remaining = info.get("remaining", "N/A")

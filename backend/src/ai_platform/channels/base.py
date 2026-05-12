@@ -13,7 +13,7 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -53,9 +53,7 @@ class _RateLimiter:
         window_start = now - 1.0
 
         # Eliminar timestamps fuera de la ventana de 1 segundo
-        self._timestamps[channel_name] = [
-            t for t in self._timestamps[channel_name] if t > window_start
-        ]
+        self._timestamps[channel_name] = [t for t in self._timestamps[channel_name] if t > window_start]
 
         # Si se excedió el límite, esperar
         if len(self._timestamps[channel_name]) >= self.max_per_second:
@@ -97,7 +95,7 @@ class BaseChannel(ABC):
         ...
 
     @abstractmethod
-    async def validate_webhook(self, payload: Any, headers: dict = None) -> dict:
+    async def validate_webhook(self, payload: Any, headers: dict | None = None) -> dict:
         """
         Validar que el webhook es auténtico.
 
@@ -113,9 +111,7 @@ class BaseChannel(ABC):
         ...
 
     @abstractmethod
-    async def extract_message(
-        self, raw_payload: Any
-    ) -> Dict[str, str]:
+    async def extract_message(self, raw_payload: Any) -> dict[str, str]:
         """
         Extraer información del mensaje del payload del canal.
 
@@ -137,7 +133,7 @@ class BaseChannel(ABC):
         tenant_id: str,
         session_manager=None,
         ragnar=None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Manejar un webhook completo: validar → extraer → Ragnar → enviar respuesta.
 
@@ -175,15 +171,13 @@ class BaseChannel(ABC):
             logger.info(f"Mensaje vacío de canal {self.channel}, ignorando")
             return {"status": "ignored", "reason": "empty_message"}
 
-        logger.info(
-            f"Mensaje de {self.channel}: user={user_id}, chat={chat_id}, text={message_text[:100]}"
-        )
+        logger.info(f"Mensaje de {self.channel}: user={user_id}, chat={chat_id}, text={message_text[:100]}")
 
         # Paso 3: Buscar o crear mapeo de canal → usuario de plataforma
+        from ai_platform.database import make_session
         from ai_platform.models.channel_mapping import (
             get_or_create_channel_mapping,
         )
-        from ai_platform.database import make_session
 
         mapping = None
         platform_user_id = None
@@ -222,8 +216,7 @@ class BaseChannel(ABC):
         session_id = decision["session_id"]
 
         logger.info(
-            f"Decisión de Ragnar: module={module}, action={decision['action']}, "
-            f"confidence={decision['confidence']:.2f}"
+            f"Decisión de Ragnar: module={module}, action={decision['action']}, confidence={decision['confidence']:.2f}"
         )
 
         # Paso 5: Ejecutar el módulo seleccionado (síncrono, no Celery)
@@ -278,9 +271,9 @@ class BaseChannel(ABC):
     async def _execute_module_sync(
         self,
         ragnar: Any,
-        decision: Dict[str, Any],
+        decision: dict[str, Any],
         tenant_id: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Ejecutar el módulo seleccionado de forma síncrona.
 
@@ -338,7 +331,7 @@ class BaseChannel(ABC):
                 "error": str(e),
             }
 
-    def _format_response_text(self, result: Dict[str, Any]) -> str:
+    def _format_response_text(self, result: dict[str, Any]) -> str:
         """
         Formatear el resultado del módulo como texto legible.
 
@@ -357,7 +350,7 @@ class BaseChannel(ABC):
             return str(result)
         return str(result)
 
-    def _chunk_message(self, text: str, max_length: int = 4096) -> List[str]:
+    def _chunk_message(self, text: str, max_length: int = 4096) -> list[str]:
         """
         Dividir un mensaje largo en chunks que quepan en el límite del canal.
 

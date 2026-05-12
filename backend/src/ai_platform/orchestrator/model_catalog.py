@@ -11,12 +11,11 @@ Patrones de Hermes aplicados:
 - Soporte para múltiples providers (OpenAI, Anthropic, Google, Meta)
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
-from enum import Enum
+from dataclasses import dataclass
+from enum import StrEnum
 
 
-class Provider(str, Enum):
+class Provider(StrEnum):
     """Proveedores de modelos LLM."""
 
     OPENAI = "openai"
@@ -26,7 +25,7 @@ class Provider(str, Enum):
     OPENROUTER = "openrouter"
 
 
-class Quality(str, Enum):
+class Quality(StrEnum):
     """Categorías de calidad."""
 
     FAST = "fast"
@@ -65,7 +64,7 @@ class ModelCatalog:
     """
 
     def __init__(self):
-        self._models: Dict[str, ModelInfo] = {}
+        self._models: dict[str, ModelInfo] = {}
         self._register_builtin_models()
 
     def _register_builtin_models(self):
@@ -148,7 +147,7 @@ class ModelCatalog:
         """Agregar modelo al catálogo."""
         self._models[model.name] = model
 
-    def get_model(self, name: str) -> Optional[ModelInfo]:
+    def get_model(self, name: str) -> ModelInfo | None:
         """
         Obtener info de un modelo.
 
@@ -160,7 +159,7 @@ class ModelCatalog:
         """
         return self._models.get(name)
 
-    def get_models_by_quality(self, quality: Quality) -> List[ModelInfo]:
+    def get_models_by_quality(self, quality: Quality) -> list[ModelInfo]:
         """
         Listar modelos por calidad.
 
@@ -172,7 +171,7 @@ class ModelCatalog:
         """
         return [m for m in self._models.values() if m.quality == quality]
 
-    def get_cost_efficient_models(self) -> List[ModelInfo]:
+    def get_cost_efficient_models(self) -> list[ModelInfo]:
         """Listar modelos económicos."""
         return [m for m in self._models.values() if m.cost_efficient]
 
@@ -207,7 +206,7 @@ class ModelCatalog:
 
 
 # Instancia global
-_model_catalog: Optional[ModelCatalog] = None
+_model_catalog: ModelCatalog | None = None
 
 
 def get_model_catalog() -> ModelCatalog:

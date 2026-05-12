@@ -25,28 +25,29 @@ que requieren BD devolverán 500.
 """
 
 import asyncio
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+import contextlib
 from contextlib import asynccontextmanager
 
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from ai_platform.api.v1.routers import router as v1_router
 from ai_platform.core.config import get_settings
 from ai_platform.middleware.logging import LoggingMiddleware
-from ai_platform.api.v1.routers import router as v1_router
 from ai_platform.orchestrator.cron_manager import get_cron_manager
 
 
 def _validate_production_config() -> None:
     """
     Validar configuración requerida en producción.
-    
+
     Fail-fast: si falta SECRET_KEY en producción, la app no arranca.
     Esto evita firmar tokens con una clave conocida por defecto.
     """
     settings = get_settings()
     if settings.is_production and not settings.SECRET_KEY:
         raise RuntimeError(
-            "FATAL: SECRET_KEY debe estar configurada en producción. "
-            "Verifica tu .env o las variables de entorno."
+            "FATAL: SECRET_KEY debe estar configurada en producción. Verifica tu .env o las variables de entorno."
         )
 
 
@@ -54,10 +55,10 @@ def _validate_production_config() -> None:
 async def lifespan(app: FastAPI):
     """
     Ciclo de vida de la aplicación.
-    
+
     AL INICIO (startup): Validar configuración, iniciar servicios.
     AL FINAL (shutdown): Detener servicios limpiamente.
-    
+
     La conexión a BD se verifica en runtime en el endpoint /health.
     """
     _validate_production_config()
@@ -68,21 +69,19 @@ async def lifespan(app: FastAPI):
     print("[INFO] Docs: http://localhost:4000/docs")
     print("[INFO] Redoc: http://localhost:4000/redoc")
     print("=" * 60)
-    
+
     # Iniciar scheduler de cron jobs en background
     cron_mgr = get_cron_manager()
     scheduler_task = asyncio.create_task(cron_mgr.start_scheduler())
     app.state["scheduler_task"] = scheduler_task
-    
+
     yield
-    
+
     # Shutdown: detener scheduler limpiamente
     scheduler_task.cancel()
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await scheduler_task
-    except asyncio.CancelledError:
-        pass
-    
+
     print("[INFO] Shutting down API")
 
 

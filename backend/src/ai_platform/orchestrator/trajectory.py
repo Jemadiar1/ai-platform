@@ -21,12 +21,13 @@ Uso:
 
 import json
 import logging
-from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
+
+from sqlalchemy import text
 
 from ai_platform.database import make_session
-from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
@@ -51,15 +52,15 @@ class Step:
     """
 
     step_type: str  # "route", "decompose", "execute", "cache", "error", etc.
-    module: Optional[str] = None
-    params: Dict[str, Any] = field(default_factory=dict)
-    result: Optional[str] = None
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    latency_ms: Optional[int] = None
-    cost_usd: Optional[float] = None
-    error: Optional[str] = None
+    module: str | None = None
+    params: dict[str, Any] = field(default_factory=dict)
+    result: str | None = None
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
+    latency_ms: int | None = None
+    cost_usd: float | None = None
+    error: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convertir a dict para serialización."""
         return {
             "step_type": self.step_type,
@@ -73,7 +74,7 @@ class Step:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Step":
+    def from_dict(cls, data: dict[str, Any]) -> "Step":
         """Crear Step desde dict deserializado."""
         ts = data.get("timestamp")
         return cls(
@@ -81,7 +82,7 @@ class Step:
             module=data.get("module"),
             params=data.get("params", {}),
             result=data.get("result"),
-            timestamp=datetime.fromisoformat(ts) if ts else datetime.now(timezone.utc),
+            timestamp=datetime.fromisoformat(ts) if ts else datetime.now(UTC),
             latency_ms=data.get("latency_ms"),
             cost_usd=data.get("cost_usd"),
             error=data.get("error"),
@@ -110,10 +111,10 @@ class Trajectory:
     session_id: str
     tenant_id: str
     user_prompt: str
-    steps: List[Step] = field(default_factory=list)
-    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    completed_at: Optional[datetime] = None
-    tags: List[str] = field(default_factory=list)
+    steps: list[Step] = field(default_factory=list)
+    started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    completed_at: datetime | None = None
+    tags: list[str] = field(default_factory=list)
 
     def add_step(self, step: Step) -> None:
         """
@@ -123,13 +124,10 @@ class Trajectory:
             step: Paso a agregar
         """
         self.steps.append(step)
-        logger.debug(
-            f"Step added to trajectory {self.session_id}: "
-            f"type={step.step_type}, module={step.module}"
-        )
+        logger.debug(f"Step added to trajectory {self.session_id}: type={step.step_type}, module={step.module}")
 
     @property
-    def duration_ms(self) -> Optional[int]:
+    def duration_ms(self) -> int | None:
         """
         Duración total de la trayectoria en milisegundos.
 
@@ -161,7 +159,7 @@ class Trajectory:
         """
         return sum(1 for s in self.steps if s.error)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convertir a dict para serialización."""
         return {
             "session_id": self.session_id,
@@ -198,14 +196,14 @@ class TrajectoryManager:
     """
 
     def __init__(self):
-        self._current_trajectories: Dict[str, Trajectory] = {}
+        self._current_trajectories: dict[str, Trajectory] = {}
 
     def start_trajectory(
         self,
         session_id: str,
         tenant_id: str,
         user_prompt: str,
-        tags: Optional[List[str]] = None,
+        tags: list[str] | None = None,
     ) -> Trajectory:
         """
         Iniciar una nueva trayectoria.
@@ -229,10 +227,7 @@ class TrajectoryManager:
             tags=tags or [],
         )
         self._current_trajectories[session_id] = trajectory
-        logger.info(
-            f"Trajectory started: session={session_id}, tenant={tenant_id}, "
-            f"prompt_preview={user_prompt[:80]}"
-        )
+        logger.info(f"Trajectory started: session={session_id}, tenant={tenant_id}, prompt_preview={user_prompt[:80]}")
         return trajectory
 
     def add_step(self, session_id: str, step: Step) -> None:
@@ -249,12 +244,9 @@ class TrajectoryManager:
         if session_id in self._current_trajectories:
             self._current_trajectories[session_id].add_step(step)
         else:
-            logger.warning(
-                f"Trajectory not found for session {session_id}. "
-                f"Step {step.step_type} not tracked."
-            )
+            logger.warning(f"Trajectory not found for session {session_id}. Step {step.step_type} not tracked.")
 
-    def complete_trajectory(self, session_id: str) -> Optional[Trajectory]:
+    def complete_trajectory(self, session_id: str) -> Trajectory | None:
         """
         Completar y guardar una trayectoria en la base de datos.
 
@@ -269,7 +261,7 @@ class TrajectoryManager:
         """
         trajectory = self._current_trajectories.pop(session_id, None)
         if trajectory:
-            trajectory.completed_at = datetime.now(timezone.utc)
+            trajectory.completed_at = datetime.now(UTC)
 
             # Log resumen
             logger.info(
@@ -282,12 +274,10 @@ class TrajectoryManager:
             # Guardar en BD
             self._save_trajectory(trajectory)
         else:
-            logger.warning(
-                f"Trajectory not found for completion: session={session_id}"
-            )
+            logger.warning(f"Trajectory not found for completion: session={session_id}")
         return trajectory
 
-    def get_active_trajectory(self, session_id: str) -> Optional[Trajectory]:
+    def get_active_trajectory(self, session_id: str) -> Trajectory | None:
         """
         Obtener la trayectoria activa actual de una sesión.
 
@@ -311,7 +301,8 @@ class TrajectoryManager:
         """
         try:
             with make_session() as db:
-                db.execute(text("""
+                db.execute(
+                    text("""
                     INSERT INTO trajectories (
                         session_id, tenant_id, user_prompt, steps,
                         started_at, completed_at, tags
@@ -319,30 +310,26 @@ class TrajectoryManager:
                         :session_id, :tenant_id, :user_prompt, :steps,
                         :started_at, :completed_at, :tags
                     )
-                """), {
-                    "session_id": trajectory.session_id,
-                    "tenant_id": trajectory.tenant_id,
-                    "user_prompt": trajectory.user_prompt[:500],
-                    "steps": json.dumps(
-                        [s.to_dict() for s in trajectory.steps],
-                        default=str,
-                    ),
-                    "started_at": trajectory.started_at.isoformat(),
-                    "completed_at": trajectory.completed_at.isoformat()
-                    if trajectory.completed_at
-                    else None,
-                    "tags": json.dumps(trajectory.tags),
-                })
-                db.commit()
-                logger.debug(
-                    f"Trajectory saved to DB: session={trajectory.session_id}"
+                """),
+                    {
+                        "session_id": trajectory.session_id,
+                        "tenant_id": trajectory.tenant_id,
+                        "user_prompt": trajectory.user_prompt[:500],
+                        "steps": json.dumps(
+                            [s.to_dict() for s in trajectory.steps],
+                            default=str,
+                        ),
+                        "started_at": trajectory.started_at.isoformat(),
+                        "completed_at": trajectory.completed_at.isoformat() if trajectory.completed_at else None,
+                        "tags": json.dumps(trajectory.tags),
+                    },
                 )
+                db.commit()
+                logger.debug(f"Trajectory saved to DB: session={trajectory.session_id}")
         except Exception as e:
-            logger.error(
-                f"Failed to save trajectory for session {trajectory.session_id}: {e}"
-            )
+            logger.error(f"Failed to save trajectory for session {trajectory.session_id}: {e}")
 
-    def get_trajectory(self, session_id: str) -> Optional[Trajectory]:
+    def get_trajectory(self, session_id: str) -> Trajectory | None:
         """
         Obtener una trayectoria completada desde BD.
 
@@ -354,11 +341,14 @@ class TrajectoryManager:
         """
         try:
             with make_session() as db:
-                result = db.execute(text("""
+                result = db.execute(
+                    text("""
                     SELECT steps, tags, started_at, completed_at
                     FROM trajectories
                     WHERE session_id = :session_id
-                """), {"session_id": session_id}).first()
+                """),
+                    {"session_id": session_id},
+                ).first()
 
                 if not result:
                     return None
@@ -368,15 +358,9 @@ class TrajectoryManager:
 
                 tags = json.loads(result.tags) if result.tags else []
                 started_at = (
-                    datetime.fromisoformat(result.started_at)
-                    if result.started_at
-                    else datetime.now(timezone.utc)
+                    datetime.fromisoformat(result.started_at) if result.started_at else datetime.now(UTC)
                 )
-                completed_at = (
-                    datetime.fromisoformat(result.completed_at)
-                    if result.completed_at
-                    else None
-                )
+                completed_at = datetime.fromisoformat(result.completed_at) if result.completed_at else None
 
                 trajectory = Trajectory(
                     session_id=session_id,
@@ -387,16 +371,14 @@ class TrajectoryManager:
                 )
                 return trajectory
         except Exception as e:
-            logger.error(
-                f"Failed to load trajectory for session {session_id}: {e}"
-            )
+            logger.error(f"Failed to load trajectory for session {session_id}: {e}")
             return None
 
     def list_trajectories(
         self,
         tenant_id: str,
         limit: int = 20,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Listar trayectorias de un tenant.
 
@@ -409,27 +391,26 @@ class TrajectoryManager:
         """
         try:
             with make_session() as db:
-                result = db.execute(text("""
+                result = db.execute(
+                    text("""
                     SELECT session_id, user_prompt, started_at, completed_at, tags
                     FROM trajectories
                     WHERE tenant_id = :tenant_id
                     ORDER BY started_at DESC
                     LIMIT :limit
-                """), {
-                    "tenant_id": tenant_id,
-                    "limit": limit,
-                }).fetchall()
+                """),
+                    {
+                        "tenant_id": tenant_id,
+                        "limit": limit,
+                    },
+                ).fetchall()
 
                 return [
                     {
                         "session_id": row.session_id,
                         "user_prompt": row.user_prompt[:100] if row.user_prompt else "",
-                        "started_at": row.started_at.isoformat()
-                        if row.started_at
-                        else None,
-                        "completed_at": row.completed_at.isoformat()
-                        if row.completed_at
-                        else None,
+                        "started_at": row.started_at.isoformat() if row.started_at else None,
+                        "completed_at": row.completed_at.isoformat() if row.completed_at else None,
                         "tags": json.loads(row.tags) if row.tags else [],
                     }
                     for row in result
@@ -451,7 +432,7 @@ class TrajectoryManager:
 
 
 # Instancia global
-_trajectory_manager: Optional[TrajectoryManager] = None
+_trajectory_manager: TrajectoryManager | None = None
 
 
 def get_trajectory_manager() -> TrajectoryManager:

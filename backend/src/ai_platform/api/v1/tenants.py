@@ -11,16 +11,15 @@ Estos endpoints son para:
 
 """
 
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from typing import List
 
 from ai_platform.database import get_db_session
 from ai_platform.middleware.tenant import get_current_tenant
-from ai_platform.models.db import Tenant, User
+from ai_platform.models.db import Tenant
 from ai_platform.schemas.tenant import TenantCreate, TenantResponse
-
 
 router = APIRouter()
 
@@ -37,12 +36,12 @@ def get_current_tenant_info(
 ):
     """
     Obtener información del tenant actual.
-    
+
     Este endpoint permite al frontend conocer:
     - Nombre del tenant
     - Plan contratado
     - Configuración actual
-    
+
     Es el primer endpoint que llama el dashboard después de login.
     """
     return TenantResponse.model_validate(tenant)
@@ -61,23 +60,18 @@ def create_tenant(
 ):
     """
     Crear un nuevo tenant.
-    
+
     Normalmeente se llama después de que un usuario se registra en Clerk.
     Clerk webhook dispara la creación del tenant.
-    
+
     El slug debe ser único (no puede haber dos "mi-empresa").
     Si ya existe un tenant con ese slug, retorna 409 Conflict.
     """
     # Verificar que el slug no exista
-    existing = db.execute(
-        select(Tenant).where(Tenant.slug == tenant_data.slug)
-    )
+    existing = db.execute(select(Tenant).where(Tenant.slug == tenant_data.slug))
     if existing.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"El slug '{tenant_data.slug}' ya está en uso"
-        )
-    
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"El slug '{tenant_data.slug}' ya está en uso")
+
     # Crear el tenant
     new_tenant = Tenant(
         name=tenant_data.name,
@@ -85,9 +79,9 @@ def create_tenant(
         plan=tenant_data.plan,
         billing_email=tenant_data.billing_email,
     )
-    
+
     db.add(new_tenant)
     db.flush()
     db.refresh(new_tenant)
-    
+
     return TenantResponse.model_validate(new_tenant)

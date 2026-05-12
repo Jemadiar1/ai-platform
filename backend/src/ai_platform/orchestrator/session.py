@@ -18,14 +18,14 @@ Modelos de DB necesarios (se agregan en db.py):
 
 import json
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import select, func, text
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from ai_platform.database import make_session
 from ai_platform.core.config import get_settings
+from ai_platform.database import make_session
 from ai_platform.orchestrator.memory import get_context_reference_manager
 
 logger = logging.getLogger(__name__)
@@ -37,26 +37,26 @@ MAX_MESSAGES_PER_SESSION = 100
 MAX_MESSAGES_IN_CONTEXT = 20  # Últimos N mensajes para contexto
 
 
-class Session:
+class ConversationSession:
     """
     Representa una sesión de conversación dentro de un tenant.
 
     Equivalente a la tabla sessions de Hermes, adaptado para SQLAlchemy.
     """
 
-    def __init__(self, id, tenant_id, user_id, title: str, parent_id: Optional[str] = None):
+    def __init__(self, id, tenant_id, user_id, title: str, parent_id: str | None = None):
         self.id = id or str(uuid4())
         self.tenant_id = tenant_id
         self.user_id = user_id
         self.title = title
         self.parent_id = parent_id
-        self.created_at: Optional[str] = None
-        self.ended_at: Optional[str] = None
+        self.created_at: str | None = None
+        self.ended_at: str | None = None
         self.message_count: int = 0
         self.token_count: int = 0
 
     @classmethod
-    def from_row(cls, row: Any) -> "Session":
+    def from_row(cls, row: Any) -> "ConversationSession":
         """Crear una sesión desde un row de SQLAlchemy."""
         s = cls(
             id=row.id,
@@ -84,8 +84,8 @@ class Message:
         session_id: str,
         role: str,
         content: str,
-        tool_calls: Optional[List] = None,
-        tool_name: Optional[str] = None,
+        tool_calls: list | None = None,
+        tool_name: str | None = None,
         token_count: int = 0,
     ):
         self.id = str(uuid4())
@@ -95,9 +95,9 @@ class Message:
         self.tool_calls = tool_calls
         self.tool_name = tool_name
         self.token_count = token_count
-        self.created_at: Optional[str] = None
-        self.finish_reason: Optional[str] = None
-        self.reasoning: Optional[str] = None
+        self.created_at: str | None = None
+        self.finish_reason: str | None = None
+        self.reasoning: str | None = None
 
     @classmethod
     def from_row(cls, row: Any) -> "Message":
@@ -133,9 +133,9 @@ class SessionManager:
     async def create(
         self,
         tenant_id: str,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         title: str = "Nueva sesión",
-        parent_id: Optional[str] = None,
+        parent_id: str | None = None,
     ) -> Session:
         """
         Crear una nueva sesión.
@@ -174,7 +174,7 @@ class SessionManager:
                     "user_id": user_id,
                     "title": title,
                     "parent_id": parent_id,
-                }
+                },
             )
             db.commit()
 
@@ -183,9 +183,9 @@ class SessionManager:
     async def get_or_create(
         self,
         tenant_id: str,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        user_id: str | None = None,
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
         """
         Obtener una sesión existente o crear una nueva.
 
@@ -224,7 +224,7 @@ class SessionManager:
             "token_count": 0,
         }
 
-    async def get(self, session_id: str, tenant_id: str) -> Optional[Dict[str, Any]]:
+    async def get(self, session_id: str, tenant_id: str) -> dict[str, Any] | None:
         """
         Obtener una sesión por ID.
 
@@ -260,7 +260,7 @@ class SessionManager:
         self,
         session_id: str,
         limit: int = 100,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Obtener todos los mensajes de una sesión.
 
@@ -333,7 +333,7 @@ class SessionManager:
         """
         await self.reset_session(session_id)
 
-    async def get_context(self, session_id: str) -> Dict[str, Any]:
+    async def get_context(self, session_id: str) -> dict[str, Any]:
         """
         Obtener contexto de sesión (frozen snapshot pattern).
 
@@ -369,11 +369,13 @@ class SessionManager:
 
             recent_messages = []
             for msg in messages:
-                recent_messages.append({
-                    "role": msg.role,
-                    "content": msg.content or "",
-                    "created_at": msg.created_at.isoformat() if msg.created_at else None,
-                })
+                recent_messages.append(
+                    {
+                        "role": msg.role,
+                        "content": msg.content or "",
+                        "created_at": msg.created_at.isoformat() if msg.created_at else None,
+                    }
+                )
 
             # Obtener metadata de la sesión
             result = db.execute(
@@ -416,11 +418,13 @@ class SessionManager:
 
             all_messages = []
             for msg in all_messages_result:
-                all_messages.append({
-                    "role": msg.role,
-                    "content": msg.content or "",
-                    "created_at": msg.created_at.isoformat() if msg.created_at else None,
-                })
+                all_messages.append(
+                    {
+                        "role": msg.role,
+                        "content": msg.content or "",
+                        "created_at": msg.created_at.isoformat() if msg.created_at else None,
+                    }
+                )
 
             # Aplicar compresión si se excede el threshold
             compressor = ContextCompressor()
@@ -442,8 +446,8 @@ class SessionManager:
         session_id: str,
         role: str,
         content: str,
-        tool_calls: Optional[List] = None,
-        tool_name: Optional[str] = None,
+        tool_calls: list | None = None,
+        tool_name: str | None = None,
         token_count: int = 0,
     ) -> Message:
         """
@@ -487,7 +491,7 @@ class SessionManager:
                     "tool_calls": json.dumps(tool_calls) if tool_calls else None,
                     "tool_name": tool_name,
                     "token_count": token_count,
-                }
+                },
             )
 
             # Actualizar conteo de mensajes en la sesión
@@ -510,7 +514,7 @@ class SessionManager:
         tenant_id: str,
         query: str,
         limit: int = 10,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Buscar mensajes en todas las sesiones de un tenant.
 
@@ -555,7 +559,7 @@ class SessionManager:
         tenant_id: str,
         limit: int = 20,
         offset: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Listar sesiones de un tenant.
 
@@ -625,8 +629,8 @@ class ContextCompressor:
     async def compress_session(
         self,
         session_id: str,
-        messages: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        messages: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """
         Compresión inteligente usando LLM si hay más de N mensajes.
 
@@ -655,7 +659,7 @@ class ContextCompressor:
             compressed = self._simple_compress(blocks)
 
         # Mantener últimos mensajes sin comprimir
-        recent = messages[-self.max_message_count:]
+        recent = messages[-self.max_message_count :]
         all_messages = compressed + recent
 
         return {
@@ -665,7 +669,7 @@ class ContextCompressor:
             "messages": all_messages,
         }
 
-    async def _compress_with_llm(self, blocks: List[Dict]) -> List[Dict]:
+    async def _compress_with_llm(self, blocks: list[dict]) -> list[dict]:
         """
         Comprimir con LLM llamando a un modelo rápido y barato.
 
@@ -680,28 +684,30 @@ class ContextCompressor:
 
         try:
             from ai_platform.orchestrator.llm_client import ROUTING_MODELS
+
             response = await self.llm_client.client.post(
                 "/v1/chat/completions",
                 json={
                     "model": ROUTING_MODELS["fast"],
                     "messages": [
-                        {"role": "system", "content": "Resumir la conversación manteniendo los puntos clave. Responder en formato JSON con 'summary'."},
+                        {
+                            "role": "system",
+                            "content": "Resumir la conversación manteniendo los puntos clave. Responder en formato JSON con 'summary'.",
+                        },
                         {"role": "user", "content": json.dumps(blocks)},
                     ],
                     "max_tokens": 1024,
                     "temperature": 0.1,
                     "response_format": {"type": "json_object"},
-                }
+                },
             )
             result = response.json()
             summary = result["choices"][0]["message"]["content"]
-            return [
-                {"role": "assistant", "content": f"[RESUMEN]: {summary}"}
-            ]
+            return [{"role": "assistant", "content": f"[RESUMEN]: {summary}"}]
         except Exception:
             return self._simple_compress(blocks)
 
-    def _simple_compress(self, blocks: List[Dict]) -> List[Dict]:
+    def _simple_compress(self, blocks: list[dict]) -> list[dict]:
         """
         Compresión simple: toma resumen por rol.
 
@@ -713,12 +719,9 @@ class ContextCompressor:
         Retorna:
             Lista con un solo mensaje de resumen
         """
-        return [{
-            "role": "assistant",
-            "content": f"[Resumen: {len(blocks)-1} mensajes anteriores omitidos]"
-        }]
+        return [{"role": "assistant", "content": f"[Resumen: {len(blocks) - 1} mensajes anteriores omitidos]"}]
 
-    def _group_by_role(self, messages: List[Dict]) -> List[Dict]:
+    def _group_by_role(self, messages: list[dict]) -> list[dict]:
         """
         Agrupar mensajes por rol para compresión eficiente.
 
@@ -731,19 +734,16 @@ class ContextCompressor:
         user_msgs = [m for m in messages if m.get("role") == "user"]
         assistant_msgs = [m for m in messages if m.get("role") == "assistant"]
         return [
-            {
-                "role": "user_summary",
-                "content": "\n".join(m.get("content", "")[:200] for m in user_msgs[-10:])
-            },
+            {"role": "user_summary", "content": "\n".join(m.get("content", "")[:200] for m in user_msgs[-10:])},
             {
                 "role": "assistant_summary",
-                "content": "\n".join(m.get("content", "")[:200] for m in assistant_msgs[-10:])
+                "content": "\n".join(m.get("content", "")[:200] for m in assistant_msgs[-10:]),
             },
         ]
 
 
 # Instancia global
-_session_manager: Optional[SessionManager] = None
+_session_manager: SessionManager | None = None
 
 
 def get_session_manager() -> SessionManager:

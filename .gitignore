@@ -31,3 +31,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+
+# AI Agent/Opencode
+.opencode/
+.agents/
+.claude/

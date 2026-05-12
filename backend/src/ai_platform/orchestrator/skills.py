@@ -16,16 +16,14 @@ Uso:
     await mgr.auto_create_after_task(tenant_id, task_result)
 """
 
-import json
 import logging
 import re
-from typing import Optional, Dict, Any, List
+from typing import Any, ClassVar
 
-from sqlalchemy import select, text
-from sqlalchemy.orm import Session
+from sqlalchemy import text
 
-from ai_platform.database import make_session
 from ai_platform.core.config import get_settings
+from ai_platform.database import make_session
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +46,7 @@ class SkillCategory:
 class SkillSecurityScanner:
     """
     Scanner de seguridad para skills.
-    
+
     Basado en los 24 patrones de seguridad de Hermes Agent:
     - API keys
     - eval/exec
@@ -58,55 +56,47 @@ class SkillSecurityScanner:
     - Imports peligrosos
     """
 
-    _DANGEROUS_PATTERNS = [
+    _DANGEROUS_PATTERNS: ClassVar[list] = [
         # eval/exec
-        (r'\beval\s*\(', "eval_call", "Uso de eval()"),
-        (r'\bexec\s*\(', "exec_call", "Uso de exec()"),
-        
+        (r"\beval\s*\(", "eval_call", "Uso de eval()"),
+        (r"\bexec\s*\(", "exec_call", "Uso de exec()"),
         # Imports peligrosos
-        (r'\bimport\s+os\.', "dangerous_import", "Import peligroso (os.)"),
-        (r'\bimport\s+subprocess', "dangerous_import", "Import peligroso (subprocess)"),
-        (r'\bimport\s+pickle', "dangerous_import", "Import peligroso (pickle)"),
-        (r'\bimport\s+ctypes', "dangerous_import", "Import peligroso (ctypes)"),
-        (r'\bimport\s+shelve', "dangerous_import", "Import peligroso (shelve)"),
-        
+        (r"\bimport\s+os\.", "dangerous_import", "Import peligroso (os.)"),
+        (r"\bimport\s+subprocess", "dangerous_import", "Import peligroso (subprocess)"),
+        (r"\bimport\s+pickle", "dangerous_import", "Import peligroso (pickle)"),
+        (r"\bimport\s+ctypes", "dangerous_import", "Import peligroso (ctypes)"),
+        (r"\bimport\s+shelve", "dangerous_import", "Import peligroso (shelve)"),
         # Shell commands
-        (r'subprocess\.call', "shell_command", "subprocess.call()"),
-        (r'subprocess\.run', "shell_command", "subprocess.run()"),
-        (r'os\.system\s*\(', "shell_command", "os.system()"),
-        (r'os\.popen\s*\(', "shell_command", "os.popen()"),
-        
+        (r"subprocess\.call", "shell_command", "subprocess.call()"),
+        (r"subprocess\.run", "shell_command", "subprocess.run()"),
+        (r"os\.system\s*\(", "shell_command", "os.system()"),
+        (r"os\.popen\s*\(", "shell_command", "os.popen()"),
         # URLs sospechosas
-        (r'https?://\d+\.\d+\.\d+\.\d+', "suspicious_url", "URL con IP directa"),
-        (r'169\.254\.169\.254', "suspicious_url", "Metadata endpoint (AWS/GCP/Azure)"),
-        
+        (r"https?://\d+\.\d+\.\d+\.\d+", "suspicious_url", "URL con IP directa"),
+        (r"169\.254\.169\.254", "suspicious_url", "Metadata endpoint (AWS/GCP/Azure)"),
         # Archivos sensibles
-        (r'/etc/passwd', "sensitive_file", "Acceso a /etc/passwd"),
-        (r'/etc/shadow', "sensitive_file", "Acceso a /etc/shadow"),
-        (r'\.ssh/', "sensitive_file", "Acceso a archivos SSH"),
-        (r'id_rsa', "sensitive_file", "Referencia a id_rsa"),
-        (r'\.env\b', "sensitive_file", "Acceso a archivos .env"),
-        
+        (r"/etc/passwd", "sensitive_file", "Acceso a /etc/passwd"),
+        (r"/etc/shadow", "sensitive_file", "Acceso a /etc/shadow"),
+        (r"\.ssh/", "sensitive_file", "Acceso a archivos SSH"),
+        (r"id_rsa", "sensitive_file", "Referencia a id_rsa"),
+        (r"\.env\b", "sensitive_file", "Acceso a archivos .env"),
         # Persistence mechanisms
-        (r'crontab', "persistence", "Uso de crontab"),
-        (r'systemctl', "persistence", "Uso de systemctl"),
-        (r'at\s+', "persistence", "Uso de at (batch scheduler)"),
-        
+        (r"crontab", "persistence", "Uso de crontab"),
+        (r"systemctl", "persistence", "Uso de systemctl"),
+        (r"at\s+", "persistence", "Uso de at (batch scheduler)"),
         # API keys hardcodeadas
         (r'API_KEY\s*=\s*[\'"][a-zA-Z0-9]{20,}', "hardcoded_secret", "API key hardcodeada"),
         (r'password\s*=\s*[\'"][^\'"]{5,}', "hardcoded_secret", "Password hardcodeado"),
         (r'secret\s*=\s*[\'"][a-zA-Z0-9]{20,}', "hardcoded_secret", "Secret hardcodeado"),
-        
         # SSH backdoors
-        (r'authorized_keys', "backdoor", "Modificación de authorized_keys"),
-        (r'ssh_key', "backdoor", "Referencia a SSH keys"),
-        
+        (r"authorized_keys", "backdoor", "Modificación de authorized_keys"),
+        (r"ssh_key", "backdoor", "Referencia a SSH keys"),
         # Reverse shells
-        (r'/dev/tcp/', "backdoor", "Reverse shell (bash TCP)"),
-        (r'nc\s+-[elp]', "backdoor", "Netcat reverse shell"),
+        (r"/dev/tcp/", "backdoor", "Reverse shell (bash TCP)"),
+        (r"nc\s+-[elp]", "backdoor", "Netcat reverse shell"),
     ]
 
-    async def scan(self, skill_content: str) -> Dict[str, Any]:
+    async def scan(self, skill_content: str) -> dict[str, Any]:
         """
         Escanear un skill contra los 24 patrones de seguridad.
 
@@ -124,11 +114,13 @@ class SkillSecurityScanner:
 
         for pattern, name, description in self._DANGEROUS_PATTERNS:
             if re.search(pattern, skill_content, re.IGNORECASE):
-                flags.append({
-                    "pattern": name,
-                    "description": description,
-                    "severity": self._classify_severity(name),
-                })
+                flags.append(
+                    {
+                        "pattern": name,
+                        "description": description,
+                        "severity": self._classify_severity(name),
+                    }
+                )
                 category_counts[name] = category_counts.get(name, 0) + 1
 
         # No flags = safe, 1-3 flags = warning, 4+ = critical
@@ -151,7 +143,7 @@ class SkillSecurityScanner:
         """Clasificar severidad de un pattern."""
         critical = {"backdoor", "hardcoded_secret", "dangerous_import"}
         warning = {"shell_command", "sensitive_file", "persistence", "suspicious_url"}
-        
+
         if pattern_name in critical:
             return "critical"
         elif pattern_name in warning:
@@ -178,14 +170,14 @@ class SkillManager:
 
     def __init__(self):
         self.security_scanner = SkillSecurityScanner()
-        self._skills_cache: Dict[str, Any] = {}
+        self._skills_cache: dict[str, Any] = {}
         self._cache_ttl = 300  # 5 minutos
 
     async def list_skills(
         self,
         tenant_id: str,
-        category: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        category: str | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Listar skills disponibles para un tenant.
 
@@ -200,6 +192,7 @@ class SkillManager:
         """
         cache_key = f"{tenant_id}:{category or 'all'}"
         import time
+
         if cache_key in self._skills_cache:
             data, timestamp = self._skills_cache[cache_key]
             if time.time() - timestamp < self._cache_ttl:
@@ -235,7 +228,7 @@ class SkillManager:
         self,
         tenant_id: str,
         skill_name: str,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Obtener un skill específico.
 
@@ -250,6 +243,7 @@ class SkillManager:
         """
         cache_key = f"skill:{tenant_id}:{skill_name}"
         import time
+
         if cache_key in self._skills_cache:
             data, timestamp = self._skills_cache[cache_key]
             if time.time() - timestamp < self._cache_ttl:
@@ -271,8 +265,8 @@ class SkillManager:
         self,
         tenant_id: str,
         skill_name: str,
-        params: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Ejecutar un skill.
 
@@ -297,9 +291,7 @@ class SkillManager:
             }
 
         # Security scan
-        scan_result = await self.security_scanner.scan(
-            skill.get("content", "") or skill.get("code", "")
-        )
+        scan_result = await self.security_scanner.scan(skill.get("content", "") or skill.get("code", ""))
 
         if not scan_result["is_safe"]:
             logger.warning(
@@ -326,9 +318,9 @@ class SkillManager:
         self,
         tenant_id: str,
         prompt: str,
-        result: Dict[str, Any],
+        result: dict[str, Any],
         task_complexity: int,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Learning loop: auto-crear skill después de tareas complejas.
 
@@ -351,17 +343,14 @@ class SkillManager:
 
         # TODO: Aquí iría la lógica real de análisis con LLM
         # Por ahora, placeholder
-        logger.info(
-            f"Auto-skill creation triggered for tenant {tenant_id}, "
-            f"complexity={task_complexity}"
-        )
+        logger.info(f"Auto-skill creation triggered for tenant {tenant_id}, complexity={task_complexity}")
 
         return None
 
     async def scan_security(
         self,
         content: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Escanear contenido contra los 24 patrones de seguridad.
 
@@ -381,7 +370,7 @@ class SkillManager:
     # Private methods
     # -------------------------------------------------------------------------
 
-    def _get_official_skill(self, name: str) -> Optional[Dict[str, Any]]:
+    def _get_official_skill(self, name: str) -> dict[str, Any] | None:
         """Obtener un skill oficial del sistema."""
         official_skills = {
             "web_search": {
@@ -415,7 +404,7 @@ class SkillManager:
         }
         return official_skills.get(name)
 
-    def _get_tenant_skills(self, tenant_id: str) -> List[Dict[str, Any]]:
+    def _get_tenant_skills(self, tenant_id: str) -> list[dict[str, Any]]:
         """Obtener skills custom de un tenant."""
         with make_session() as db:
             result = db.execute(
@@ -442,7 +431,7 @@ class SkillManager:
         self,
         tenant_id: str,
         skill_name: str,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Obtener un skill custom de un tenant."""
         with make_session() as db:
             result = db.execute(
@@ -468,7 +457,7 @@ class SkillManager:
 
 
 # Instancia global
-_skill_manager: Optional[SkillManager] = None
+_skill_manager: SkillManager | None = None
 
 
 def get_skill_manager() -> SkillManager:

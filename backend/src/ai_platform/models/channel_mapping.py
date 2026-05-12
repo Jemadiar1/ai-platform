@@ -7,11 +7,12 @@ se asocien correctamente al tenant y usuario correcto.
 
 """
 
+import contextlib
 import logging
-from typing import Optional
+from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import text, select
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ class MappingRowProxy:
 def get_channel_user_info(
     channel: str,
     channel_user_id: str,
-) -> Optional[Any]:
+) -> Any | None:
     """
     Buscar un mapeo de canal externo por channel y channel_user_id.
 
@@ -95,9 +96,9 @@ def get_or_create_channel_mapping(
     user_id: UUID,
     channel: str,
     channel_user_id: str,
-    channel_username: Optional[str] = None,
-    channel_chat_id: Optional[str] = None,
-) -> Optional[Any]:
+    channel_username: str | None = None,
+    channel_chat_id: str | None = None,
+) -> Any | None:
     """
     Buscar o crear un mapeo entre un usuario de canal externo y un usuario de la plataforma.
 
@@ -137,10 +138,7 @@ def get_or_create_channel_mapping(
         ).first()
 
         if result:
-            logger.info(
-                f"Mapeo de canal existente: channel={channel}, "
-                f"channel_user_id={channel_user_id}"
-            )
+            logger.info(f"Mapeo de canal existente: channel={channel}, channel_user_id={channel_user_id}")
             return _row_to_mapping(result)
 
     except Exception as e:
@@ -174,21 +172,23 @@ def get_or_create_channel_mapping(
         db.commit()
 
         logger.info(
-            f"Nuevo mapeo de canal creado: channel={channel}, "
-            f"channel_user_id={channel_user_id}, user_id={user_id}"
+            f"Nuevo mapeo de canal creado: channel={channel}, channel_user_id={channel_user_id}, user_id={user_id}"
         )
 
         return get_or_create_channel_mapping(
-            db, tenant_id, user_id, channel,
-            channel_user_id, channel_username, channel_chat_id,
+            db,
+            tenant_id,
+            user_id,
+            channel,
+            channel_user_id,
+            channel_username,
+            channel_chat_id,
         )
 
     except Exception as e:
         logger.error(f"Error creando mapeo de canal: {e}")
-        try:
+        with contextlib.suppress(Exception):
             db.rollback()
-        except Exception:
-            pass
         return None
 
 
@@ -203,6 +203,7 @@ def _row_to_mapping(row: Any) -> Any:
         Objeto con atributos: id, tenant_id, user_id, channel,
         channel_user_id, channel_username, channel_chat_id, created_at
     """
+
     class MappingRow:
         pass
 

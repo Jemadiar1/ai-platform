@@ -11,10 +11,11 @@ Inspirado en:
 
 import json
 import logging
-import httpx
-from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +38,9 @@ class MCPTool:
 
     name: str
     description: str
-    parameters: Dict[str, Any]
+    parameters: dict[str, Any]
     enabled: bool = True
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class MCPClient:
@@ -62,7 +63,7 @@ class MCPClient:
     """
 
     def __init__(self):
-        self._tools: Dict[str, MCPTool] = {}
+        self._tools: dict[str, MCPTool] = {}
         self._register_builtin_tools()
 
     def _register_builtin_tools(self) -> None:
@@ -72,47 +73,53 @@ class MCPClient:
         Estas herramientas están siempre disponibles y no requieren
         configuración externa.
         """
-        self.register_tool(MCPTool(
-            name="time",
-            description=(
-                "Obtener la fecha y hora actual. Útil para tareas que "
-                "necesitan contexto temporal como 'programar para mañana' "
-                "o 'cuánto tiempo ha pasado desde...'."
-            ),
-            parameters={},
-            metadata={"type": "builtin"},
-        ))
+        self.register_tool(
+            MCPTool(
+                name="time",
+                description=(
+                    "Obtener la fecha y hora actual. Útil para tareas que "
+                    "necesitan contexto temporal como 'programar para mañana' "
+                    "o 'cuánto tiempo ha pasado desde...'."
+                ),
+                parameters={},
+                metadata={"type": "builtin"},
+            )
+        )
 
-        self.register_tool(MCPTool(
-            name="calculate",
-            description=(
-                "Evaluar expresiones matemáticas. Soporta operaciones "
-                "aritméticas básicas (+, -, *, /), funciones trigonométricas, "
-                "logaritmos y constantes matemáticas."
-            ),
-            parameters={
-                "expression": {
-                    "type": "string",
-                    "description": "Expresión matemática a evaluar",
-                }
-            },
-            metadata={"type": "builtin"},
-        ))
+        self.register_tool(
+            MCPTool(
+                name="calculate",
+                description=(
+                    "Evaluar expresiones matemáticas. Soporta operaciones "
+                    "aritméticas básicas (+, -, *, /), funciones trigonométricas, "
+                    "logaritmos y constantes matemáticas."
+                ),
+                parameters={
+                    "expression": {
+                        "type": "string",
+                        "description": "Expresión matemática a evaluar",
+                    }
+                },
+                metadata={"type": "builtin"},
+            )
+        )
 
-        self.register_tool(MCPTool(
-            name="json_formatter",
-            description=(
-                "Formatear y validar datos JSON. Útil para estructurar "
-                "respuestas, validar esquemas o beautify JSON."
-            ),
-            parameters={
-                "json_string": {
-                    "type": "string",
-                    "description": "Cadena JSON a formatear",
-                }
-            },
-            metadata={"type": "builtin"},
-        ))
+        self.register_tool(
+            MCPTool(
+                name="json_formatter",
+                description=(
+                    "Formatear y validar datos JSON. Útil para estructurar "
+                    "respuestas, validar esquemas o beautify JSON."
+                ),
+                parameters={
+                    "json_string": {
+                        "type": "string",
+                        "description": "Cadena JSON a formatear",
+                    }
+                },
+                metadata={"type": "builtin"},
+            )
+        )
 
         logger.info(f"MCPClient initialized with {len(self._tools)} built-in tools")
 
@@ -187,7 +194,7 @@ class MCPClient:
             return True
         return False
 
-    async def call_tool(self, tool_name: str, params: Dict[str, Any]) -> Dict:
+    async def call_tool(self, tool_name: str, params: dict[str, Any]) -> dict:
         """
         Ejecutar una herramienta MCP.
 
@@ -222,9 +229,7 @@ class MCPClient:
         # Ejecutar herramientas HTTP-based (MCP server)
         return await self._execute_http_tool(tool, params)
 
-    async def _execute_builtin(
-        self, tool_name: str, params: Dict[str, Any]
-    ) -> Dict:
+    async def _execute_builtin(self, tool_name: str, params: dict[str, Any]) -> dict:
         """
         Ejecutar una herramienta builtin integrada.
 
@@ -237,7 +242,7 @@ class MCPClient:
         """
         try:
             if tool_name == "time":
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 return {
                     "timezone": "UTC",
                     "datetime": now.isoformat(),
@@ -272,7 +277,7 @@ class MCPClient:
                     result = eval(expression, {"__builtins__": {}}, allowed_names)
                     return {"expression": expression, "result": result}
                 except Exception as e:
-                    return {"error": f"Calculation failed: {str(e)}"}
+                    return {"error": f"Calculation failed: {e!s}"}
 
             elif tool_name == "json_formatter":
                 json_string = params.get("json_string", "")
@@ -284,7 +289,7 @@ class MCPClient:
                     formatted = json.dumps(parsed, indent=2, ensure_ascii=False)
                     return {"formatted": formatted, "valid": True}
                 except json.JSONDecodeError as e:
-                    return {"error": f"Invalid JSON: {str(e)}", "valid": False}
+                    return {"error": f"Invalid JSON: {e!s}", "valid": False}
 
             else:
                 return {"error": f"Unknown builtin tool: {tool_name}"}
@@ -293,9 +298,7 @@ class MCPClient:
             logger.error(f"Builtin tool '{tool_name}' execution failed: {e}")
             return {"error": str(e)}
 
-    async def _execute_http_tool(
-        self, tool: MCPTool, params: Dict[str, Any]
-    ) -> Dict:
+    async def _execute_http_tool(self, tool: MCPTool, params: dict[str, Any]) -> dict:
         """
         Ejecutar una herramienta HTTP-based via MCP server.
 
@@ -329,7 +332,7 @@ class MCPClient:
             logger.error(f"MCP tool call failed: {e}")
             return {"error": str(e)}
 
-    async def list_tools(self, tenant_id: str) -> List[Dict]:
+    async def list_tools(self, tenant_id: str) -> list[dict]:
         """
         Listar herramientas MCP disponibles para un tenant.
 
@@ -351,7 +354,7 @@ class MCPClient:
             if t.enabled
         ]
 
-    def get_tool_schemas(self) -> List[Dict[str, Any]]:
+    def get_tool_schemas(self) -> list[dict[str, Any]]:
         """
         Obtener esquemas de herramientas para inyectar en prompts del LLM.
 
@@ -373,9 +376,7 @@ class MCPClient:
 
             param_str = "\n".join(param_descriptions) if param_descriptions else "    (ninguno)"
 
-            schemas.append(
-                f"- {tool.name}: {tool.description}\n  Parámetros:\n{param_str}"
-            )
+            schemas.append(f"- {tool.name}: {tool.description}\n  Parámetros:\n{param_str}")
 
         return schemas
 
@@ -386,7 +387,7 @@ class MCPClient:
 
 
 # Instancia global
-_mcp_client: Optional[MCPClient] = None
+_mcp_client: MCPClient | None = None
 
 
 def get_mcp_client() -> MCPClient:

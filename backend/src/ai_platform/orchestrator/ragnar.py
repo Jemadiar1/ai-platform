@@ -20,18 +20,18 @@ Uso:
 
 import json
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Any
 
-from ai_platform.orchestrator.llm_client import LLMClient
-from ai_platform.orchestrator.session import SessionManager
-from ai_platform.orchestrator.memory import MemoryManager
-from ai_platform.orchestrator.skills import SkillManager
+from ai_platform.core.security import scanner
 from ai_platform.orchestrator.budget import BudgetTracker
-from ai_platform.orchestrator.observability import DecisionLogger
-from ai_platform.orchestrator.plugins import PluginManager, PluginSpec
-from ai_platform.orchestrator.trajectory import TrajectoryManager, Step
 from ai_platform.orchestrator.knowledge_base import get_knowledge_base
-from ai_platform.core.security import scanner, prompt_sanitizer
+from ai_platform.orchestrator.llm_client import LLMClient
+from ai_platform.orchestrator.memory import MemoryManager
+from ai_platform.orchestrator.observability import DecisionLogger
+from ai_platform.orchestrator.plugins import PluginManager
+from ai_platform.orchestrator.session import SessionManager
+from ai_platform.orchestrator.skills import SkillManager
+from ai_platform.orchestrator.trajectory import Step, TrajectoryManager
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +69,9 @@ class Ragnar:
         self,
         prompt: str,
         tenant_id: str,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        user_id: str | None = None,
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
         """
         Decidir qué módulo debe ejecutar una tarea.
 
@@ -176,44 +176,49 @@ class Ragnar:
             )
         except RuntimeError as e:
             logger.warning(f"LLM unavailable, using fallback: {e}")
-            routing = await self.llm_client._route_with_fallback(
-                prompt, tenant_id, history
-            )
+            routing = await self.llm_client._route_with_fallback(prompt, tenant_id, history)
 
         # Paso 6.5: Registrar paso de routing en trayectoria
-        self.trajectory_manager.add_step(session_id, Step(
-            step_type="route",
-            module=routing.get("module"),
-            params={"prompt_preview": prompt[:100]},
-            result=routing.get("reasoning", ""),
-            latency_ms=routing.get("latency_ms"),
-        ))
+        self.trajectory_manager.add_step(
+            session_id,
+            Step(
+                step_type="route",
+                module=routing.get("module"),
+                params={"prompt_preview": prompt[:100]},
+                result=routing.get("reasoning", ""),
+                latency_ms=routing.get("latency_ms"),
+            ),
+        )
 
         # Paso 7: Registrar decisión en observabilidad
-        self.decision_logger.log_decision({
-            "tenant_id": tenant_id,
-            "user_id": user_id,
-            "session_id": session_id,
-            "prompt": prompt[:100],  # Truncar para evitar logs enormes
-            "module": routing["module"],
-            "action": routing["action"],
-            "confidence": routing["confidence"],
-            "reasoning": routing["reasoning"],
-        })
+        self.decision_logger.log_decision(
+            {
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+                "session_id": session_id,
+                "prompt": prompt[:100],  # Truncar para evitar logs enormes
+                "module": routing["module"],
+                "action": routing["action"],
+                "confidence": routing["confidence"],
+                "reasoning": routing["reasoning"],
+            }
+        )
 
         # Paso 8: Si necesita descomposición, descomponer
         subtasks = []
         if routing.get("needs_decomposition"):
-            substeps_start = self.trajectory_manager.get_active_trajectory(session_id)
             subtasks = await self.llm_client.decompose_task(
                 prompt=prompt,
                 tenant_id=tenant_id,
             )
-            self.trajectory_manager.add_step(session_id, Step(
-                step_type="decompose",
-                params={"subtask_count": len(subtasks)},
-                result=json.dumps(subtasks, default=str)[:500],
-            ))
+            self.trajectory_manager.add_step(
+                session_id,
+                Step(
+                    step_type="decompose",
+                    params={"subtask_count": len(subtasks)},
+                    result=json.dumps(subtasks, default=str)[:500],
+                ),
+            )
 
         # Paso 9: Extraer parámetros específicos del módulo
         params = await self.llm_client.extract_params(
@@ -234,10 +239,10 @@ class Ragnar:
 
     async def execute(
         self,
-        decision: Dict[str, Any],
+        decision: dict[str, Any],
         tenant_id: str,
         task_id: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Ejecutar una tarea basada en la decisión de Ragnar.
 
@@ -258,13 +263,17 @@ class Ragnar:
         """
         module = decision["module"]
         params = decision["params"]
+        session_id = decision.get("session_id")
 
         if module == "uncategorized":
-            self.trajectory_manager.add_step(session_id, Step(
-                step_type="error",
-                module="uncategorized",
-                error="No module matched the user prompt.",
-            ))
+            self.trajectory_manager.add_step(
+                session_id,
+                Step(
+                    step_type="error",
+                    module="uncategorized",
+                    error="No module matched the user prompt.",
+                ),
+            )
             self.trajectory_manager.complete_trajectory(session_id)
             return {
                 "module": "uncategorized",
@@ -299,15 +308,18 @@ class Ragnar:
             result = await self._invoke_module(module, enriched_payload)
 
             # Registrar paso de ejecución en trayectoria
-            self.trajectory_manager.add_step(session_id, Step(
-                step_type="execute",
-                module=module,
-                params={"task_id": task_id},
-                result=json.dumps(result, default=str)[:500],
-            ))
+            self.trajectory_manager.add_step(
+                session_id,
+                Step(
+                    step_type="execute",
+                    module=module,
+                    params={"task_id": task_id},
+                    result=json.dumps(result, default=str)[:500],
+                ),
+            )
 
             # Ejecutar subagentes si la decisión los requiere
-            if routing.get("needs_decomposition") and decision.get("subtasks"):
+            if decision.get("needs_decomposition") and decision.get("subtasks"):
                 subagent_results = await self.subagent_manager.execute_subagents(
                     parent_session_id=decision.get("session_id"),
                     tenant_id=tenant_id,
@@ -339,11 +351,14 @@ class Ragnar:
         except Exception as e:
             await self.budget_tracker.end_task(task_id, module, success=False, error=str(e))
             # Registrar error en trayectoria
-            self.trajectory_manager.add_step(session_id, Step(
-                step_type="error",
-                module=module,
-                error=str(e),
-            ))
+            self.trajectory_manager.add_step(
+                session_id,
+                Step(
+                    step_type="error",
+                    module=module,
+                    error=str(e),
+                ),
+            )
             self.trajectory_manager.complete_trajectory(session_id)
             raise
 
@@ -360,7 +375,7 @@ class Ragnar:
     # Private methods
     # -------------------------------------------------------------------------
 
-    def _enrich_payload(self, params: Dict[str, Any], decision: Dict[str, Any]) -> Dict[str, Any]:
+    def _enrich_payload(self, params: dict[str, Any], decision: dict[str, Any]) -> dict[str, Any]:
         """
         Enriquecer la payload con contexto de sesión y memoria.
 
@@ -386,8 +401,8 @@ class Ragnar:
     async def _invoke_module(
         self,
         module: str,
-        payload: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
         """
         Invocar al handler del módulo seleccionado.
 
@@ -407,7 +422,7 @@ class Ragnar:
 
 
 # Instancia global
-_ragnar: Optional[Ragnar] = None
+_ragnar: Ragnar | None = None
 
 
 def get_ragnar() -> Ragnar:

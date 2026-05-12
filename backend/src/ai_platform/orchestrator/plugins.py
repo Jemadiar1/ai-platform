@@ -22,11 +22,10 @@ Uso:
 """
 
 import asyncio
-import importlib
 import logging
-from typing import Any, Dict, Optional, Callable, List
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -59,11 +58,11 @@ class PluginSpec:
     load_order: int = 0
 
     # Hook points del ciclo de vida
-    on_start: Optional[Callable] = None
-    on_stop: Optional[Callable] = None
-    on_decide: Optional[Callable] = None
-    on_execute: Optional[Callable] = None
-    on_message: Optional[Callable] = None
+    on_start: Callable | None = None
+    on_stop: Callable | None = None
+    on_decide: Callable | None = None
+    on_execute: Callable | None = None
+    on_message: Callable | None = None
 
 
 class PluginManager:
@@ -91,8 +90,8 @@ class PluginManager:
     """
 
     def __init__(self):
-        self._plugins: Dict[str, PluginSpec] = {}
-        self._hooks: Dict[str, List[Callable]] = {
+        self._plugins: dict[str, PluginSpec] = {}
+        self._hooks: dict[str, list[Callable]] = {
             "on_start": [],
             "on_stop": [],
             "on_decide": [],
@@ -125,10 +124,7 @@ class PluginManager:
 
         self._plugins[spec.name] = spec
         self._register_hooks(spec)
-        logger.info(
-            f"Plugin registered: {spec.name} v{spec.version} "
-            f"({spec.description})"
-        )
+        logger.info(f"Plugin registered: {spec.name} v{spec.version} ({spec.description})")
 
     def unregister(self, plugin_name: str) -> bool:
         """
@@ -170,9 +166,7 @@ class PluginManager:
         ]:
             if hook_func:
                 self._hooks[hook_name].append(hook_func)
-                logger.debug(
-                    f"Hook registered: {spec.name}.{hook_name} -> {hook_func.__name__}"
-                )
+                logger.debug(f"Hook registered: {spec.name}.{hook_name} -> {hook_func.__name__}")
 
     def _unregister_hooks(self, spec: PluginSpec) -> None:
         """
@@ -182,10 +176,7 @@ class PluginManager:
             spec: Especificación del plugin a remover
         """
         for hook_name in self._hooks:
-            self._hooks[hook_name] = [
-                h for h in self._hooks[hook_name]
-                if h.__name__ != spec.name
-            ]
+            self._hooks[hook_name] = [h for h in self._hooks[hook_name] if h.__name__ != spec.name]
 
     async def start(self) -> None:
         """
@@ -212,9 +203,7 @@ class PluginManager:
                 continue
             await self.execute_hook("on_start", plugin_name=plugin.name)
 
-        logger.info(
-            f"PluginManager started with {len(self._plugins)} plugins"
-        )
+        logger.info(f"PluginManager started with {len(self._plugins)} plugins")
 
     async def stop(self) -> None:
         """
@@ -245,7 +234,7 @@ class PluginManager:
         self,
         hook_name: str,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Ejecutar todos los hooks de un tipo específico.
 
@@ -263,7 +252,7 @@ class PluginManager:
             logger.warning(f"Unknown hook type: {hook_name}")
             return {}
 
-        results: Dict[str, Any] = {}
+        results: dict[str, Any] = {}
         hooks = self._hooks[hook_name]
 
         for hook_func in hooks:
@@ -271,9 +260,7 @@ class PluginManager:
                 hook_result = await self._invoke_hook(hook_func, **kwargs)
                 results[hook_func.__name__] = hook_result
             except Exception as e:
-                logger.error(
-                    f"Plugin hook '{hook_func.__name__}' ({hook_name}) failed: {e}"
-                )
+                logger.error(f"Plugin hook '{hook_func.__name__}' ({hook_name}) failed: {e}")
                 results[hook_func.__name__] = {"error": str(e)}
 
         return results
@@ -298,7 +285,7 @@ class PluginManager:
         else:
             return func(**kwargs)
 
-    def list_plugins(self) -> List[Dict[str, Any]]:
+    def list_plugins(self) -> list[dict[str, Any]]:
         """
         Listar todos los plugins registrados.
 
@@ -316,7 +303,7 @@ class PluginManager:
             for spec in self._plugins.values()
         ]
 
-    def get_plugin(self, plugin_name: str) -> Optional[PluginSpec]:
+    def get_plugin(self, plugin_name: str) -> PluginSpec | None:
         """
         Obtener un plugin por nombre.
 
@@ -340,7 +327,7 @@ class PluginManager:
 
 
 # Instancia global
-_plugin_manager: Optional[PluginManager] = None
+_plugin_manager: PluginManager | None = None
 
 
 def get_plugin_manager() -> PluginManager:

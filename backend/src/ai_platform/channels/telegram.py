@@ -12,9 +12,10 @@ Configuración:
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
+
 from ai_platform.channels.base import BaseChannel
 from ai_platform.core.config import get_settings
 
@@ -36,7 +37,7 @@ class TelegramChannel(BaseChannel):
         self.token = self.settings.TELEGRAM_BOT_TOKEN
         self.base_url = f"https://api.telegram.org/bot{self.token}" if self.token else ""
 
-    async def validate_webhook(self, payload: Any, headers: dict = None) -> dict:
+    async def validate_webhook(self, payload: Any, headers: dict | None = None) -> dict:
         """
         Validar que el webhook viene de Telegram.
 
@@ -82,7 +83,7 @@ class TelegramChannel(BaseChannel):
 
         return {"valid": True, "reason": "webhook_valido"}
 
-    async def extract_message(self, raw_payload: Any) -> Dict[str, str]:
+    async def extract_message(self, raw_payload: Any) -> dict[str, str]:
         """
         Extraer información del mensaje desde el formato Bot API de Telegram.
 
@@ -137,7 +138,6 @@ class TelegramChannel(BaseChannel):
         user_info = message.get("from", {})
         user_id = str(user_info.get("id", ""))
         first_name = user_info.get("first_name", "")
-        last_name = user_info.get("last_name", "")
         username = user_info.get("username", "")
         user_name = first_name or username or "Usuario"
 
@@ -160,7 +160,7 @@ class TelegramChannel(BaseChannel):
         chat_id: str,
         text: str,
         parse_mode: str = "HTML",
-        reply_markup: Optional[Dict] = None,
+        reply_markup: dict | None = None,
     ) -> Any:
         """
         Enviar mensaje a un chat de Telegram.
@@ -258,7 +258,7 @@ class TelegramChannel(BaseChannel):
             logger.error(f"Error respondiendo callback query: {e}")
             return {"status": "error", "message": str(e)}
 
-    def _chunk_message(self, text: str, max_length: int = 4096) -> List[str]:
+    def _chunk_message(self, text: str, max_length: int = 4096) -> list[str]:
         """
         Dividir mensaje en chunks de máximo 4096 caracteres (límite de Telegram).
 
@@ -274,7 +274,7 @@ class TelegramChannel(BaseChannel):
         return super()._chunk_message(text, max_length=max_length)
 
 
-def create_telegram_keyboard(buttons: List[List[str]], url: Optional[str] = None) -> Dict:
+def create_telegram_keyboard(buttons: list[list[str]], url: str | None = None) -> dict:
     """
     Crear un teclado personalizado para Telegram.
 
@@ -290,15 +290,19 @@ def create_telegram_keyboard(buttons: List[List[str]], url: Optional[str] = None
         keyboard_row = []
         for label in row:
             if url:
-                keyboard_row.append({
-                    "text": label,
-                    "url": url,
-                })
+                keyboard_row.append(
+                    {
+                        "text": label,
+                        "url": url,
+                    }
+                )
             else:
-                keyboard_row.append({
-                    "text": label,
-                    "callback_data": label,
-                })
+                keyboard_row.append(
+                    {
+                        "text": label,
+                        "callback_data": label,
+                    }
+                )
         keyboard.append(keyboard_row)
 
     return {

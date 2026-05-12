@@ -13,7 +13,7 @@ Flujo:
     {
         "prompt": "Crear una landing page y publicarla en Instagram"
     }
-    
+
     Response:
     {
         "module": "ai-web",
@@ -36,9 +36,10 @@ Flujo:
 - El usuario puede confirmar o modificar antes de ejecutar
 """
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
 
 from ai_platform.middleware.tenant import get_current_tenant
 from ai_platform.models.db import Tenant
@@ -51,15 +52,15 @@ class RagnarDecideRequest(BaseModel):
     """
     Request para el endpoint /ragnar/decide.
     """
+
     prompt: str = Field(
         ...,
         min_length=1,
         max_length=4096,
-        description="Input del usuario (ej: 'Crear una landing page para mi negocio')"
+        description="Input del usuario (ej: 'Crear una landing page para mi negocio')",
     )
-    session_id: Optional[str] = Field(
-        default=None,
-        description="ID de sesión existente (opcional, se crea nueva si no se proporciona)"
+    session_id: str | None = Field(
+        default=None, description="ID de sesión existente (opcional, se crea nueva si no se proporciona)"
     )
 
 
@@ -67,13 +68,14 @@ class RagnarDecideResponse(BaseModel):
     """
     Response del endpoint /ragnar/decide.
     """
+
     module: str
     action: str
-    params: Dict[str, Any]
+    params: dict[str, Any]
     confidence: float
     reasoning: str
     needs_decomposition: bool
-    subtasks: List[Dict[str, Any]]
+    subtasks: list[dict[str, Any]]
     session_id: str
     status: str = "decision_made"
 
@@ -126,13 +128,13 @@ def ragnar_decide(
     """
     try:
         ragnar = get_ragnar()
-        
+
         decision = ragnar.decide(
             prompt=request.prompt,
             tenant_id=str(tenant.id),
             session_id=request.session_id,
         )
-        
+
         return RagnarDecideResponse(
             module=decision["module"],
             action=decision["action"],
@@ -143,14 +145,10 @@ def ragnar_decide(
             subtasks=decision.get("subtasks", []),
             session_id=decision["session_id"],
         )
-        
+
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from None
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error en el orquestador Ragnar: {str(e)}"
-        )
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error en el orquestador Ragnar: {e!s}"
+        ) from None

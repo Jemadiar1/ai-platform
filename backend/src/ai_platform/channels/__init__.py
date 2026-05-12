@@ -10,13 +10,13 @@ Cada canal implementa la misma interfaz:
 """
 
 from ai_platform.channels.base import BaseChannel
-from ai_platform.channels.telegram import TelegramChannel
 from ai_platform.channels.discord import DiscordChannel
+from ai_platform.channels.telegram import TelegramChannel
 from ai_platform.channels.whatsapp_channel import WhatsAppChannel
 
 __all__ = [
     "BaseChannel",
-    "TelegramChannel",
     "DiscordChannel",
+    "TelegramChannel",
     "WhatsAppChannel",
 ]
