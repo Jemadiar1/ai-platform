@@ -278,7 +278,7 @@ class Ragnar:
             )
             return {
                 "status": "error",
-                "error": f"El módulo '{module}' no es soportado",
+                "error": f"El módulo '{module}' no soportado",
             }
 
         if module == "uncategorized":
