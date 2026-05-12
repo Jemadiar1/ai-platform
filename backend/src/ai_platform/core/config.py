@@ -80,6 +80,16 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: Optional[str] = None
     OPENROUTER_API_URL: str = Field(default="https://openrouter.ai/api/v1")
     
+    # === NaN Builders (Custom GPU) ===
+    NAN_API_KEY: Optional[str] = None
+    NAN_API_URL: str = Field(default="https://api.nan.builders/v1")
+
+    # === LLM Selection ===
+    LLM_PROVIDER: str = Field(default="openrouter")  # openrouter o nan
+    PRIMARY_MODEL: Optional[str] = None
+    FALLBACK_MODEL: Optional[str] = None
+    FAST_MODEL: Optional[str] = None
+    
     # === WhatsApp API ===
     WHATSAPP_PHONE_NUMBER_ID: Optional[str] = None
     WHATSAPP_ACCESS_TOKEN: Optional[str] = None

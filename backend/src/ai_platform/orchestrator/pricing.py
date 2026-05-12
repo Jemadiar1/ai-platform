@@ -320,6 +320,11 @@ MODEL_PRICING = {
         "output_price_per_1m": 0.55,
         "category": "economy",
     },
+    "qwen/qwen3.6-plus": {
+        "input_price_per_1m": 0.0,
+        "output_price_per_1m": 0.0,
+        "category": "premium",
+    },
     "qwen/qwen-2.5-72b-instruct": {
         "input_price_per_1m": 0.35,
         "output_price_per_1m": 0.55,

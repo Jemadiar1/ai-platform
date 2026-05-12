@@ -71,9 +71,9 @@ class LLMClient:
     def __init__(self):
         self.settings = get_settings()
         self.client = httpx.AsyncClient(
-            base_url=self.settings.OPENROUTER_API_URL,
+            base_url=self.settings.NAN_API_URL if self.settings.LLM_PROVIDER.lower() == 'nan' else self.settings.OPENROUTER_API_URL,
             headers={
-                "Authorization": f"Bearer {self.settings.OPENROUTER_API_KEY}",
+                "Authorization": f"Bearer {self.settings.NAN_API_KEY if self.settings.LLM_PROVIDER.lower() == 'nan' else self.settings.OPENROUTER_API_KEY}",
                 "Content-Type": "application/json",
                 "HTTP-Referer": "https://github.com/Jemadiar1/ai-platform",
                 "X-Title": "AI Platform - NeuralCrew Labs",
@@ -115,7 +115,7 @@ class LLMClient:
         Raises:
             RuntimeError: Si no hay API key configurada
         """
-        if not self.settings.OPENROUTER_API_KEY:
+        if self.settings.LLM_PROVIDER.lower() == "openrouter" and not self.settings.OPENROUTER_API_KEY:
             raise RuntimeError(
                 "OPENROUTER_API_KEY no está configurada. "
                 "Verifica tu .env."
@@ -128,7 +128,7 @@ class LLMClient:
         user_message = self._build_routing_user_prompt(prompt, history)
 
         # Modelo a usar (primario para Claude con caching)
-        model = ROUTING_MODELS["primary"]
+        model = self.settings.PRIMARY_MODEL or ROUTING_MODELS["primary"]
         is_claude = "claude" in model
 
         # Aplicar rate limiting antes de hacer la solicitud
@@ -200,7 +200,7 @@ class LLMClient:
         Retorna:
             Lista de subtasks (cada una con module, action, params)
         """
-        if not self.settings.OPENROUTER_API_KEY:
+        if self.settings.LLM_PROVIDER.lower() == "openrouter" and not self.settings.OPENROUTER_API_KEY:
             raise RuntimeError(
                 "OPENROUTER_API_KEY no está configurada. "
                 "Verifica tu .env."
@@ -209,7 +209,7 @@ class LLMClient:
         system_prompt = self._build_decompose_system_prompt(tenant_id)
         user_message = f"Decompone la siguiente tarea en pasos específicos:\n\n{complex_prompt}"
 
-        model = ROUTING_MODELS["primary"]
+        model = self.settings.PRIMARY_MODEL or ROUTING_MODELS["primary"]
         is_claude = "claude" in model
 
         # Aplicar rate limiting antes de hacer la solicitud
@@ -273,7 +273,7 @@ class LLMClient:
         Retorna:
             Dict con parámetros extraídos
         """
-        if not self.settings.OPENROUTER_API_KEY:
+        if self.settings.LLM_PROVIDER.lower() == "openrouter" and not self.settings.OPENROUTER_API_KEY:
             raise RuntimeError(
                 "OPENROUTER_API_KEY no está configurada. "
                 "Verifica tu .env."
@@ -282,7 +282,7 @@ class LLMClient:
         system_prompt = self._build_extract_system_prompt(module, action)
         user_message = f"Extrae los parámetros relevantes de este input:\n\n{prompt}"
 
-        model = ROUTING_MODELS["fast"]
+        model = self.settings.FAST_MODEL or ROUTING_MODELS["fast"]
         is_claude = "claude" in model
 
         # Aplicar rate limiting antes de hacer la solicitud
