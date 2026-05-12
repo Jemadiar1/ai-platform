@@ -13,9 +13,7 @@
 services:
   # ---- AI Platform Backend ----
   app:
-    build:
-      context: ../..
-      dockerfile: infra/docker/Dockerfile
+    image: ghcr.io/${GITHUB_REPOSITORY:-jemadiar1/ai-platform}:${IMAGE_TAG:-latest}
     container_name: ai-platform-api
     restart: unless-stopped
     ports:

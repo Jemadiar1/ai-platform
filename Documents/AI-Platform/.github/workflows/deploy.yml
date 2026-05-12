@@ -50,7 +50,7 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
-          context: ./backend
+          context: .
           file: ./infra/docker/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -80,8 +80,10 @@ jobs:
 
             cd /opt/ai-platform
 
+            echo "Pulling latest image from ghcr.io..."
             docker compose -f infra/docker/docker-compose.prod.yml pull
 
+            echo "Starting services..."
             docker compose -f infra/docker/docker-compose.prod.yml up -d
 
             echo "Waiting for services to start..."
@@ -94,6 +96,7 @@ jobs:
               exit 1
             }
 
+            echo "Cleaning up unused images..."
             docker image prune -f
 
       - name: Health check retry

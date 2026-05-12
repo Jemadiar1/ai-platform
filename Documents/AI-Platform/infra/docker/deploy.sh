@@ -51,9 +51,9 @@ for var in "${REQUIRED_VARS[@]}"; do
     fi
 done
 
-# Construir y levantar
-echo "[4/6] Construyendo imagen Docker..."
-docker compose -f "$COMPOSE_FILE" build --no-cache
+# Pull y levantar
+echo "[4/6] Pulling latest image from ghcr.io..."
+docker compose -f "$COMPOSE_FILE" pull
 
 echo "[5/6] Levantando servicios..."
 docker compose -f "$COMPOSE_FILE" up -d
