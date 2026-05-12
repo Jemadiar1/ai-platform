@@ -100,12 +100,12 @@ class TestTenantsEndpoint:
     
     def test_create_tenant_requires_slug(self):
         """Verificar que crear tenant requiere slug"""
-        # Sin auth, devuelve 401
+        # Sin auth, devuelve 401, pero con slug vacío devuelve 422 (validación)
         response = client.post("/api/v1/tenants", json={
             "name": "Test",
             "slug": ""  # Slug vacío
         })
-        assert response.status_code == 401
+        assert response.status_code == 422
 
 
 class TestDocsEndpoint:

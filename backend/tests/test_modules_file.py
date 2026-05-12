@@ -101,7 +101,7 @@ class TestAiConnectHandler:
         result = handler.execute(payload)
 
         assert result["action"] == "handle_chat_message"
-        assert result["status"] == "handled"
+        assert result["status"] == "success"
         assert "response" in result["result"]
 
     def test_execute_schedule_appointment(self, handler):

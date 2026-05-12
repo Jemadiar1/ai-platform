@@ -32,12 +32,38 @@ class TestRagnarDecide:
              patch("ai_platform.orchestrator.ragnar.BudgetTracker") as mock_budget_cls, \
              patch("ai_platform.orchestrator.ragnar.DecisionLogger") as mock_dl_cls:
 
-            mock_llm_cls.return_value = MagicMock()
-            mock_sm_cls.return_value = MagicMock()
-            mock_mm_cls.return_value = MagicMock()
-            mock_skill_cls.return_value = MagicMock()
-            mock_budget_cls.return_value = MagicMock()
-            mock_dl_cls.return_value = MagicMock()
+            mock_llm = MagicMock()
+            mock_llm.route_task = AsyncMock()
+            mock_llm._route_with_fallback = AsyncMock()
+            mock_llm.decompose_task = AsyncMock()
+            mock_llm.extract_params = AsyncMock()
+
+            mock_sm = MagicMock()
+            mock_sm.get_or_create = AsyncMock()
+            mock_sm.get_context = AsyncMock()
+            mock_sm.close = AsyncMock()
+
+            mock_mm = MagicMock()
+            mock_mm.prefetch = AsyncMock()
+            mock_mm.sync_turn = AsyncMock()
+            mock_mm.close = AsyncMock()
+
+            mock_skill = MagicMock()
+            mock_skill.close = AsyncMock()
+
+            mock_budget = MagicMock()
+            mock_budget.begin_task = AsyncMock()
+            mock_budget.end_task = AsyncMock()
+            mock_budget.close = AsyncMock()
+
+            mock_dl = MagicMock()
+
+            mock_llm_cls.return_value = mock_llm
+            mock_sm_cls.return_value = mock_sm
+            mock_mm_cls.return_value = mock_mm
+            mock_skill_cls.return_value = mock_skill
+            mock_budget_cls.return_value = mock_budget
+            mock_dl_cls.return_value = mock_dl
 
             return Ragnar()
 
@@ -250,12 +276,38 @@ class TestRagnarExecute:
              patch("ai_platform.orchestrator.ragnar.BudgetTracker") as mock_budget_cls, \
              patch("ai_platform.orchestrator.ragnar.DecisionLogger") as mock_dl_cls:
 
-            mock_llm_cls.return_value = MagicMock()
-            mock_sm_cls.return_value = MagicMock()
-            mock_mm_cls.return_value = MagicMock()
-            mock_skill_cls.return_value = MagicMock()
-            mock_budget_cls.return_value = MagicMock()
-            mock_dl_cls.return_value = MagicMock()
+            mock_llm = MagicMock()
+            mock_llm.route_task = AsyncMock()
+            mock_llm._route_with_fallback = AsyncMock()
+            mock_llm.decompose_task = AsyncMock()
+            mock_llm.extract_params = AsyncMock()
+
+            mock_sm = MagicMock()
+            mock_sm.get_or_create = AsyncMock()
+            mock_sm.get_context = AsyncMock()
+            mock_sm.close = AsyncMock()
+
+            mock_mm = MagicMock()
+            mock_mm.prefetch = AsyncMock()
+            mock_mm.sync_turn = AsyncMock()
+            mock_mm.close = AsyncMock()
+
+            mock_skill = MagicMock()
+            mock_skill.close = AsyncMock()
+
+            mock_budget = MagicMock()
+            mock_budget.begin_task = AsyncMock()
+            mock_budget.end_task = AsyncMock()
+            mock_budget.close = AsyncMock()
+
+            mock_dl = MagicMock()
+
+            mock_llm_cls.return_value = mock_llm
+            mock_sm_cls.return_value = mock_sm
+            mock_mm_cls.return_value = mock_mm
+            mock_skill_cls.return_value = mock_skill
+            mock_budget_cls.return_value = mock_budget
+            mock_dl_cls.return_value = mock_dl
 
             return Ragnar()
 
