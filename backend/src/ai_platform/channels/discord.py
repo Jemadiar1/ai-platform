@@ -12,6 +12,7 @@ Configuración:
 """
 
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -181,11 +182,8 @@ class DiscordChannel(BaseChannel):
 
         message_text = raw_payload.get("content", "") or ""
 
-        # Eliminar mención del bot del mensaje
-        if "<@" in message_text:
-            message_text = message_text.replace(f"<@{self._get_bot_id(raw_payload)}>", "").strip()
-        if "<@!@" in message_text:
-            message_text = message_text.replace(f"<@!{self._get_bot_id(raw_payload)}>", "").strip()
+        # Eliminar menciones del bot del mensaje (<@ID> y <@!ID>)
+        message_text = re.sub(r"<@!?[\d]+>", "", message_text).strip()
 
         chat_id = str(raw_payload.get("channel_id", ""))
 

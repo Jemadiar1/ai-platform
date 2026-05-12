@@ -17,7 +17,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
 from ai_platform.core.security import scanner, prompt_sanitizer
 
@@ -215,7 +215,7 @@ class TestTelegramChannelSendMessage:
             mock_response.json.return_value = {"ok": True, "result": {"message_id": 42}}
             mock_response.raise_for_status = MagicMock()
 
-            mock_client = MagicMock()
+            mock_client = AsyncMock()
             mock_client.post.return_value = mock_response
             mock_client_cls.return_value.__aenter__.return_value = mock_client
 
@@ -545,15 +545,17 @@ class TestWhatsAppChannelValidateWebhook:
             result = await channel.validate_webhook(payload)
             assert result["valid"] is True
 
-    def test_validate_webhook_no_entries(self):
+    @pytest.mark.asyncio
+    async def test_validate_webhook_no_entries(self):
         """Debe rechazar webhooks sin entries."""
         from ai_platform.channels.whatsapp_channel import WhatsAppChannel
 
         channel = WhatsAppChannel()
-        result = channel.validate_webhook({"entry": []})
+        result = await channel.validate_webhook({"entry": []})
         assert result["valid"] is False
 
-    def test_validate_webhook_no_from(self):
+    @pytest.mark.asyncio
+    async def test_validate_webhook_no_from(self):
         """Debe rechazar mensajes sin 'from'."""
         from ai_platform.channels.whatsapp_channel import WhatsAppChannel
 
@@ -567,10 +569,11 @@ class TestWhatsAppChannelValidateWebhook:
                 }]
             }]
         }
-        result = channel.validate_webhook(payload)
+        result = await channel.validate_webhook(payload)
         assert result["valid"] is False
 
-    def test_validate_webhook_no_signature(self):
+    @pytest.mark.asyncio
+    async def test_validate_webhook_no_signature(self):
         """Validación pasa sin firma configurada."""
         from ai_platform.channels.whatsapp_channel import WhatsAppChannel
 
@@ -586,7 +589,7 @@ class TestWhatsAppChannelValidateWebhook:
                     }]
                 }]
             }
-            result = channel.validate_webhook(payload)
+            result = await channel.validate_webhook(payload)
             assert result["valid"] is True
 
 

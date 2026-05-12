@@ -144,9 +144,10 @@ def valid_password():
 @pytest.fixture
 def hashed_password():
     """Contraseña hasheada de prueba."""
-    from passlib.context import CryptContext
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    return pwd_context.hash("TestPass123!")
+    import bcrypt
+    salt = bcrypt.gensalt(rounds=12)
+    hashed = bcrypt.hashpw("TestPass123!".encode("utf-8"), salt)
+    return hashed.decode("utf-8")
 
 
 @pytest.fixture
@@ -178,3 +179,26 @@ def sample_bidi_text():
 def sample_null_bytes():
     """Texto con bytes nulos incrustados."""
     return "Hola\x00mundo\x00"
+
+
+@pytest.fixture(autouse=True)
+def mock_settings(monkeypatch):
+    """Mock settings global para evitar errores de atributos faltantes."""
+    from unittest.mock import MagicMock
+    mock_settings = MagicMock()
+    mock_settings.SECRET_KEY = "test-secret-key-for-jwt-signing"
+    mock_settings.JWT_ALGORITHM = "HS256"
+    mock_settings.JWT_EXPIRATION_HOURS = 1
+    mock_settings.TELEGRAM_BOT_TOKEN = "test_telegram_token"
+    mock_settings.DISCORD_BOT_TOKEN = "test_discord_token"
+    mock_settings.DISCORD_CHANNEL_ID = "test_channel_id"
+    mock_settings.WHATSAPP_PHONE_NUMBER_ID = "wa_phone_id"
+    mock_settings.WHATSAPP_ACCESS_TOKEN = "wa_access_token"
+    mock_settings.WHATSAPP_WEBHOOK_VERIFY_TOKEN = "wa_verify_token"
+    mock_settings.WHATSAPP_APP_SECRET = None
+    mock_settings.CLERK_SECRET_KEY = "test_clerk_secret"
+    monkeypatch.setattr("ai_platform.core.security.get_settings", lambda: mock_settings)
+    monkeypatch.setattr("ai_platform.core.config.get_settings", lambda: mock_settings)
+    monkeypatch.setattr("ai_platform.channels.telegram.get_settings", lambda: mock_settings)
+    monkeypatch.setattr("ai_platform.channels.discord.get_settings", lambda: mock_settings)
+    monkeypatch.setattr("ai_platform.channels.whatsapp_channel.get_settings", lambda: mock_settings)

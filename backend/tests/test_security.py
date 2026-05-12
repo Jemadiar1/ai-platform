@@ -195,6 +195,17 @@ class TestPromptSanitizer:
 class TestJWTAuth:
     """Tests de autenticación JWT."""
 
+    @pytest.fixture(autouse=True)
+    def mock_settings(self, monkeypatch):
+        """Mock settings para que SECRET_KEY sea un string válido."""
+        from unittest.mock import MagicMock
+        mock_settings = MagicMock()
+        mock_settings.SECRET_KEY = "test-secret-key-for-jwt-signing"
+        mock_settings.JWT_ALGORITHM = "HS256"
+        mock_settings.JWT_EXPIRATION_HOURS = 1
+        monkeypatch.setattr("ai_platform.core.security.get_settings", lambda: mock_settings)
+        monkeypatch.setattr("ai_platform.core.config.get_settings", lambda: mock_settings)
+
     def test_create_and_decode_token(self):
         """Debe crear y decodificar un token JWT."""
         token = create_access_token(
@@ -400,6 +411,17 @@ class TestLRUCache:
 
 class TestTenantIsolation:
     """Tests de aislamiento de tenants."""
+
+    @pytest.fixture(autouse=True)
+    def mock_settings(self, monkeypatch):
+        """Mock settings para que SECRET_KEY sea un string válido."""
+        from unittest.mock import MagicMock
+        mock_settings = MagicMock()
+        mock_settings.SECRET_KEY = "test-secret-key-for-jwt-signing"
+        mock_settings.JWT_ALGORITHM = "HS256"
+        mock_settings.JWT_EXPIRATION_HOURS = 1
+        monkeypatch.setattr("ai_platform.core.security.get_settings", lambda: mock_settings)
+        monkeypatch.setattr("ai_platform.core.config.get_settings", lambda: mock_settings)
 
     def test_token_contains_tenant_id(self, test_tenant_id):
         """El token debe contener el tenant_id correcto."""

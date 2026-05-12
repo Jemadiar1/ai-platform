@@ -20,7 +20,6 @@ from typing import ClassVar
 from urllib.parse import urlparse
 
 import bcrypt as _bcrypt
-
 from jose import JWTError, jwt
 
 from ai_platform.core.config import get_settings
@@ -166,12 +165,12 @@ class InjectionScanner:
 
     # Patrón 1: Prompt injection markers
     _SYSTEM_INJECTION = re.compile(
-        r'(?:^|\n)\s*(?:"""|' + '"""' + r")\s*\n.*?(?:ignore|disregard|bypass|new rule|forget)",
-        re.IGNORECASE | re.DOTALL,
+        r'ignore\s+previous\s+instructions|disregard\s+all|bypass\s+all|forget\s+previous|new\s+rule',
+        re.IGNORECASE,
     )
 
     # Patrón 2: System directive tags
-    _DIRECTIVE_INJECTION = re.compile(r"(?:^\s*(?:system|user|assistant|role):\s)", re.IGNORECASE)
+    _DIRECTIVE_INJECTION = re.compile(r"(?:^\s*(?:system|user|assistant|role):\s)", re.IGNORECASE | re.MULTILINE)
 
     # Patrón 3: JSON injection en texto plano
     _JSON_INJECTION = re.compile(r'\{(?:\s*"(?:system|role|instruction|command)"\s*:)', re.IGNORECASE)

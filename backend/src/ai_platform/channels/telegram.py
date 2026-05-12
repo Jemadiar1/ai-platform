@@ -76,7 +76,7 @@ class TelegramChannel(BaseChannel):
         # Verificar que el mensaje no sea de un bot (para prevenir eco)
         message = payload.get("message") or payload.get("edited_message") or payload.get("channel_post")
         if message:
-            is_bot = message.get("is_bot")
+            is_bot = message.get("from", {}).get("is_bot")
             if is_bot:
                 logger.info("Ignorando mensaje de bot")
                 return {"valid": False, "reason": "mensaje_de_bot"}

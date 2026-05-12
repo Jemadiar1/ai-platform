@@ -248,11 +248,12 @@ class WhatsAppChannel(BaseChannel):
 
         # Extraer texto del mensaje
         message_text = ""
-        if msg.get("type") == "text":
+        msg_type = msg.get("type", "")
+        if msg_type == "text" or (not msg_type and "text" in msg):
             message_text = msg.get("text", {}).get("body", "")
-        elif msg.get("type") == "button":
+        elif msg_type == "button":
             message_text = msg.get("button", {}).get("text", "")
-        elif msg.get("type") == "interactive":
+        elif msg_type == "interactive":
             message_text = msg.get("interactive", {}).get("nfm_reply", {}).get("response_body", "")
 
         # WhatsApp usa wa_id como identificador único
