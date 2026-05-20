@@ -41,7 +41,8 @@ ENV PYTHONUNBUFFERED=1 \
     APP_ENV=production \
     APP_HOST=0.0.0.0 \
     APP_PORT=4000 \
-    WORKER_CONCURRENCY=4
+    WORKER_CONCURRENCY=4 \
+    PYTHONPATH=/app/src
 
 # Instilar solo lo necesario para runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
