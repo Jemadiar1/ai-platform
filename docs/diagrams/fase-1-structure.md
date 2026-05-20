@@ -1,320 +1,155 @@
-# Diagrama de Estructura Fase 1
+# Diagrama De Estructura Fase 1
 
-## Vista de alto nivel
+Estado del documento: 2026-05-20
+
+## Vista De Runtime Actual
 
 ```mermaid
 flowchart TD
-    U[Usuarios / Clientes / Admin] --> FE[Apps Next.js]
-    FE --> GW[API Gateway]
-    GW --> ORCH[Orchestrator]
-    ORCH --> MOD[Modulos de negocio ai-*]
-    ORCH --> WK[Workers]
-    MOD --> PKG[Packages compartidos]
-    GW --> DATA[(PostgreSQL / Redis / Qdrant)]
-    ORCH --> DATA
-    WK --> DATA
-    FE --> OBS[Observability]
-    GW --> OBS
-    ORCH --> OBS
-    WK --> OBS
+    subgraph External[Entradas externas]
+        USER[Usuarios web]
+        CLERK[Clerk webhook]
+        STRIPE[Stripe webhook]
+        TG[Telegram]
+        WA[WhatsApp]
+        DC[Discord]
+    end
+
+    subgraph Edge[Edge productivo]
+        NGINX[Nginx<br/>TLS, rate limits, headers]
+    end
+
+    subgraph Backend[Backend Python]
+        FASTAPI[FastAPI app<br/>backend/src/ai_platform/main.py]
+        API[API v1 routers]
+        RAGNAR[Ragnar orchestrator]
+        CHANNELS[Channel adapters]
+        MODULES[Python modules ai-*]
+        CELERY[Celery task runner]
+    end
+
+    subgraph Data[Data]
+        PG[(PostgreSQL)]
+        REDIS[(Redis)]
+    end
+
+    USER --> NGINX
+    CLERK --> NGINX
+    STRIPE --> NGINX
+    TG --> NGINX
+    WA --> NGINX
+    DC --> NGINX
+    NGINX --> FASTAPI
+    FASTAPI --> API
+    API --> RAGNAR
+    API --> CHANNELS
+    RAGNAR --> MODULES
+    API --> PG
+    API --> REDIS
+    CELERY --> MODULES
+    CELERY --> PG
+    CELERY --> REDIS
 ```
 
-## Estructura completa del repositorio
+## Vista De Monorepo
 
 ```text
-ai-platform/
-├── .env.example
-├── .gitignore
-├── package.json
-├── pnpm-workspace.yaml
-├── README.md
-├── tsconfig.base.json
-├── turbo.json
-│
+AI-Platform/
 ├── apps/
-│   ├── admin/
-│   │   ├── app/
-│   │   │   ├── layout.tsx
-│   │   │   └── page.tsx
-│   │   ├── next.config.mjs
-│   │   ├── package.json
-│   │   └── tsconfig.json
-│   ├── dashboard/
-│   │   ├── app/
-│   │   │   ├── layout.tsx
-│   │   │   └── page.tsx
-│   │   ├── next.config.mjs
-│   │   ├── package.json
-│   │   └── tsconfig.json
-│   └── website/
-│       ├── app/
-│       │   ├── layout.tsx
-│       │   └── page.tsx
-│       ├── next.config.mjs
-│       ├── package.json
-│       └── tsconfig.json
-│
+│   ├── admin/                 # Next.js placeholder
+│   ├── dashboard/             # Next.js prototype; consume API local
+│   └── website/               # Next.js placeholder
+├── backend/
+│   ├── src/ai_platform/
+│   │   ├── api/v1/            # FastAPI routers
+│   │   ├── channels/          # Telegram, WhatsApp, Discord
+│   │   ├── core/              # Settings y seguridad
+│   │   ├── models/            # SQLAlchemy y channel mappings SQL
+│   │   ├── modules/           # Handlers Python ai_*
+│   │   ├── orchestrator/      # Ragnar y subsistemas
+│   │   ├── services/          # Billing y servicios internos
+│   │   └── workers/           # Celery task runner
+│   ├── tests/                 # Pytest backend
+│   ├── alembic/               # Árbol Alembic usado por migrate.py
+│   └── migrations/alembic/    # Árbol Alembic copiado por Dockerfile
 ├── docs/
-│   ├── architecture.md
 │   ├── adr/
-│   │   ├── ADR-001-monorepo.md
-│   │   └── ADR-002-multi-tenancy.md
 │   ├── diagrams/
-│   │   └── fase-1-structure.md
 │   ├── reports/
-│   │   └── 2026-04-16-architecture-refactor-report.md
 │   └── runbooks/
-│       └── development.md
-│
 ├── infra/
-│   ├── ci/
-│   │   └── github-actions/
-│   │       └── ci.yml
-│   ├── compose/
-│   │   └── docker-compose.dev.yml
-│   ├── docker/
-│   │   └── README.md
-│   └── k8s/
-│       └── base/
-│           └── namespace.yaml
-│
+│   ├── compose/               # Docker Compose local Postgres/Redis
+│   ├── docker/                # Dockerfile, compose prod, Nginx
+│   └── ci/                    # CI histórico TS
 ├── modules/
-│   ├── ai-ads/
-│   │   ├── README.md
-│   │   ├── application/
-│   │   │   └── handler.py
-│   │   ├── contracts/
-│   │   │   └── README.md
-│   │   ├── domain/
-│   │   │   └── README.md
-│   │   ├── infrastructure/
-│   │   │   └── README.md
-│   │   ├── prompts/
-│   │   │   └── system.txt
-│   │   ├── tests/
-│   │   │   └── test_module.py
-│   │   └── tools/
-│   │       └── README.md
-│   ├── ai-analytics/
-│   │   ├── README.md
-│   │   ├── application/
-│   │   │   └── handler.py
-│   │   ├── contracts/
-│   │   │   └── README.md
-│   │   ├── domain/
-│   │   │   └── README.md
-│   │   ├── infrastructure/
-│   │   │   └── README.md
-│   │   ├── prompts/
-│   │   │   └── system.txt
-│   │   ├── tests/
-│   │   │   └── test_module.py
-│   │   └── tools/
-│   │       └── README.md
-│   ├── ai-connect/
-│   │   ├── README.md
-│   │   ├── application/
-│   │   │   └── handler.py
-│   │   ├── contracts/
-│   │   │   └── README.md
-│   │   ├── domain/
-│   │   │   └── README.md
-│   │   ├── infrastructure/
-│   │   │   └── README.md
-│   │   ├── prompts/
-│   │   │   └── system.txt
-│   │   ├── tests/
-│   │   │   └── test_module.py
-│   │   └── tools/
-│   │       └── README.md
-│   ├── ai-content/
-│   │   ├── README.md
-│   │   ├── application/
-│   │   │   └── handler.py
-│   │   ├── contracts/
-│   │   │   └── README.md
-│   │   ├── domain/
-│   │   │   └── README.md
-│   │   ├── infrastructure/
-│   │   │   └── README.md
-│   │   ├── prompts/
-│   │   │   └── system.txt
-│   │   ├── tests/
-│   │   │   └── test_module.py
-│   │   └── tools/
-│   │       └── README.md
-│   ├── ai-leads/
-│   │   ├── README.md
-│   │   ├── application/
-│   │   │   └── handler.py
-│   │   ├── contracts/
-│   │   │   └── README.md
-│   │   ├── domain/
-│   │   │   └── README.md
-│   │   ├── infrastructure/
-│   │   │   └── README.md
-│   │   ├── prompts/
-│   │   │   └── system.txt
-│   │   ├── tests/
-│   │   │   └── test_module.py
-│   │   └── tools/
-│   │       └── README.md
-│   ├── ai-social/
-│   │   ├── README.md
-│   │   ├── application/
-│   │   │   └── handler.py
-│   │   ├── contracts/
-│   │   │   └── README.md
-│   │   ├── domain/
-│   │   │   └── README.md
-│   │   ├── infrastructure/
-│   │   │   └── README.md
-│   │   ├── prompts/
-│   │   │   └── system.txt
-│   │   ├── tests/
-│   │   │   └── test_module.py
-│   │   └── tools/
-│   │       └── README.md
-│   └── ai-web/
-│       ├── README.md
-│       ├── application/
-│       │   └── handler.py
-│       ├── contracts/
-│       │   └── README.md
-│       ├── domain/
-│       │   └── README.md
-│       ├── infrastructure/
-│       │   └── README.md
-│       ├── prompts/
-│       │   └── system.txt
-│       ├── tests/
-│       │   └── test_module.py
-│       └── tools/
-│           └── README.md
-│
+│   └── ai-*/                  # Scaffolds de dominio
 ├── observability/
-│   ├── grafana/
-│   │   └── provisioning/
-│   │       └── README.md
+│   ├── prometheus/
 │   ├── loki/
-│   │   └── loki-config.yml
-│   └── prometheus/
-│       └── prometheus.yml
-│
+│   └── grafana/
 ├── packages/
 │   ├── sdk/
-│   │   ├── package.json
-│   │   └── src/
-│   │       ├── js/
-│   │       │   └── index.ts
-│   │       └── python/
-│   │           └── __init__.py
 │   ├── shared-prompts/
-│   │   ├── package.json
-│   │   └── src/
-│   │       └── index.ts
 │   ├── shared-schemas/
-│   │   ├── package.json
-│   │   └── src/
-│   │       └── index.ts
 │   ├── shared-types/
-│   │   ├── package.json
-│   │   └── src/
-│   │       └── index.ts
 │   └── ui-kit/
-│       ├── package.json
-│       └── src/
-│           └── index.tsx
-│
 ├── services/
-│   ├── api-gateway/
-│   │   ├── package.json
-│   │   ├── src/
-│   │   │   └── index.ts
-│   │   └── tsconfig.json
-│   └── orchestrator/
-│       ├── .env.example
-│       ├── Dockerfile
-│       └── config/
-│           ├── clients/
-│           │   └── README.md
-│           ├── skills/
-│           │   └── README.md
-│           └── SOUL.md
-│
+│   ├── api-gateway/           # Fastify mínimo
+│   └── orchestrator/          # Configuración, sin runtime TS principal
 └── workers/
-    ├── scheduler/
-    │   ├── package.json
-    │   ├── src/
-    │   │   └── index.ts
-    │   └── tsconfig.json
-    └── task-runner/
-        ├── package.json
-        ├── src/
-        │   └── index.ts
-        └── tsconfig.json
+    ├── scheduler/             # Worker TS mínimo
+    └── task-runner/           # Worker TS mínimo
 ```
 
-## Diagrama de responsabilidades
+## Flujo De Una Tarea API
 
 ```mermaid
-flowchart LR
-    subgraph Apps
-        A1[dashboard]
-        A2[admin]
-        A3[website]
-    end
+sequenceDiagram
+    participant Client
+    participant API as FastAPI /api/v1/tasks
+    participant DB as PostgreSQL
+    participant Queue as Redis/Celery
+    participant Worker as Celery worker
+    participant Module as ai_platform.modules.ai_*
 
-    subgraph Services
-        S1[api-gateway]
-        S2[orchestrator]
-    end
-
-    subgraph Modules
-        M1[ai-connect]
-        M2[ai-web]
-        M3[ai-content]
-        M4[ai-social]
-        M5[ai-leads]
-        M6[ai-ads]
-        M7[ai-analytics]
-    end
-
-    subgraph Workers
-        W1[task-runner]
-        W2[scheduler]
-    end
-
-    subgraph Shared
-        P1[shared-types]
-        P2[shared-schemas]
-        P3[shared-prompts]
-        P4[ui-kit]
-        P5[sdk]
-    end
-
-    A1 --> S1
-    A2 --> S1
-    A3 --> S1
-    S1 --> S2
-    S2 --> M1
-    S2 --> M2
-    S2 --> M3
-    S2 --> M4
-    S2 --> M5
-    S2 --> M6
-    S2 --> M7
-    S2 --> W1
-    S2 --> W2
-    M1 --> P1
-    M2 --> P1
-    M3 --> P2
-    M4 --> P3
-    M5 --> P5
-    M6 --> P2
-    M7 --> P1
-    A1 --> P4
-    A2 --> P4
-    A3 --> P4
+    Client->>API: POST /api/v1/tasks
+    API->>DB: crea Task(status=pending)
+    Note over API,Queue: Publicación a Celery todavía pendiente
+    Worker->>DB: lee/actualiza Task cuando recibe job
+    Worker->>Module: importa Handler y ejecuta action
+    Worker->>DB: guarda resultado, status y usage
 ```
 
+## Flujo De Canales
+
+```mermaid
+sequenceDiagram
+    participant Channel as Telegram/WhatsApp/Discord
+    participant API as FastAPI webhook
+    participant Map as channel_mappings
+    participant Ragnar
+    participant Module as Module execution
+    participant Adapter as Channel adapter
+
+    Channel->>API: POST /api/v1/webhooks/{channel}
+    API->>Map: busca o crea mapping
+    API->>Ragnar: decide módulo y acción
+    API->>Module: ejecuta handler dinámico
+    API->>Adapter: envía respuesta
+    Adapter->>Channel: mensaje final
+```
+
+Riesgo: el flujo depende de `channel_mappings`, pero esa tabla no está alineada entre modelos y migraciones canónicas.
+
+## Estado Por Bloque
+
+| Bloque | Estado actual |
+| --- | --- |
+| Backend FastAPI | Implementado y es el runtime principal. |
+| Ragnar | Implementado para decisión, contexto y fallback; ejecución directa de módulo sigue placeholder. |
+| Worker Celery | Implementado parcialmente; no está conectado desde `POST /tasks`. |
+| Módulos Python | `ai-connect` tiene más lógica; el resto son stubs. |
+| Apps Next.js | Dashboard prototipo; admin y website placeholders. |
+| Services TS | Scaffolds mínimos, no son el runtime productivo. |
+| Infra Docker prod | App Python + Postgres + Redis + Nginx. |
+| Observabilidad | Configuración base, con target Prometheus desactualizado. |
