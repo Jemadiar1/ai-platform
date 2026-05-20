@@ -771,9 +771,7 @@ async def _execute_module(
             sys.path.insert(0, src_path)
 
         handler_module = importlib.import_module(handler_module_path)
-        execute_func = getattr(handler_module, "execute", None) or getattr(
-            handler_module, "execute_async", None
-        )
+        execute_func = getattr(handler_module, "execute", None) or getattr(handler_module, "execute_async", None)
 
         if execute_func is None:
             return {
