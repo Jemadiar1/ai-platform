@@ -59,7 +59,6 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copiar código de la aplicación
 WORKDIR /app
 COPY backend/src ./src
-COPY backend/migrations ./migrations
 COPY backend/pyproject.toml ./
 
 # Crear directorio para logs y datos

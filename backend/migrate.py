@@ -26,7 +26,7 @@ from alembic.config import Config
 
 
 def get_alembic_config():
-    """Obtener configuración de Alembic."""
+    """Obtener configuración de Alembic desde backend/alembic.ini."""
     alembic_ini_path = os.path.join(os.path.dirname(__file__), "alembic.ini")
     return Config(alembic_ini_path)
 

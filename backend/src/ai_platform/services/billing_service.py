@@ -29,7 +29,10 @@ Flujo de integración:
     5. Mostramos el plan actual en el dashboard
 """
 
+import logging
+
 import httpx
+import stripe
 from fastapi import HTTPException, status
 
 from ai_platform.core.config import get_settings
@@ -142,14 +145,29 @@ class BillingService:
         - Siempre verificar la firma de Stripe antes de procesar
         - Esto evita que alguien fakee webhooks
         """
-        # TODO: Verificar firma con stripe.webhooks.construct_event
-        # Por ahora, procesamos directamente
+        # Verificar firma de Stripe para autenticar el webhook
+        stripe.api_key = self.settings.STRIPE_SECRET_KEY or "sk_test_dummy"
 
         try:
-            import json
+            event = stripe.Webhook.construct_event(
+                payload,
+                signature,
+                self.settings.STRIPE_WEBHOOK_SECRET or "",
+            )
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Payload inválido",
+            ) from None
+        except stripe.error.SignatureVerificationError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Firma de Stripe inválida",
+            ) from None
 
-            event_data = json.loads(payload)
-            event_type = event_data.get("type")
+        try:
+            event_type = event.type
+            event_data = event.data.object
 
             if event_type == "customer.subscription.created":
                 return await self._handle_subscription_created(event_data)
@@ -164,8 +182,13 @@ class BillingService:
             else:
                 return {"status": "unhandled", "event": event_type}
 
-        except json.JSONDecodeError:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payload inválido") from None
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error procesando webhook de Stripe: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error procesando webhook",
+            ) from None
 
     async def _handle_subscription_created(self, event: dict) -> dict:
         """Manejar nueva suscripción."""

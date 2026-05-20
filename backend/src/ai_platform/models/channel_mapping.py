@@ -90,6 +90,65 @@ def get_channel_user_info(
     return None
 
 
+def create_fallback_channel_mapping(
+    db: Session,
+    channel: str,
+    channel_user_id: str,
+    channel_username: str | None = None,
+    channel_chat_id: str | None = None,
+) -> Any | None:
+    """
+    Crear un mapeo de canal sin tenant_id ni user_id de plataforma.
+
+    Se usa para el primer mensaje de un usuario de canal externo
+    cuando aún no se ha asociado a un tenant. El mapeo se enriquece
+    después con el tenant_id real cuando se procesa el mensaje.
+
+    Parámetros:
+        db: Sesión de SQLAlchemy
+        channel: Canal ("telegram", "discord", "whatsapp")
+        channel_user_id: ID del usuario en el canal externo
+        channel_username: Nombre de usuario en el canal (opcional)
+        channel_chat_id: ID del chat en el canal (opcional)
+
+    Retorna:
+        Objeto ChannelMapping o None si falló la creación
+    """
+    mapping_id = uuid4()
+    try:
+        db.execute(
+            text("""
+                INSERT INTO channel_mappings (
+                    id, tenant_id, user_id, channel,
+                    channel_user_id, channel_username, channel_chat_id,
+                    created_at
+                ) VALUES (
+                    :id, NULL, NULL, :channel,
+                    :channel_user_id, :channel_username, :channel_chat_id,
+                    NOW()
+                )
+            """),
+            {
+                "id": mapping_id,
+                "channel": channel,
+                "channel_user_id": channel_user_id,
+                "channel_username": channel_username,
+                "channel_chat_id": channel_chat_id,
+            },
+        )
+        db.commit()
+
+        logger.info(f"Nuevo mapeo de canal fallback creado: channel={channel}, channel_user_id={channel_user_id}")
+
+        return get_channel_user_info(channel=channel, channel_user_id=channel_user_id)
+
+    except Exception as e:
+        logger.error(f"Error creando mapeo de canal fallback: {e}")
+        with contextlib.suppress(Exception):
+            db.rollback()
+        return None
+
+
 def get_or_create_channel_mapping(
     db: Session,
     tenant_id: UUID,

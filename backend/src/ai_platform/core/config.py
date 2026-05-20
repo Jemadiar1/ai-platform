@@ -90,6 +90,7 @@ class Settings(BaseSettings):
     WHATSAPP_PHONE_NUMBER_ID: str | None = None
     WHATSAPP_ACCESS_TOKEN: str | None = None
     WHATSAPP_WEBHOOK_VERIFY_TOKEN: str | None = None
+    WHATSAPP_APP_SECRET: str | None = None
 
     # === Telegram API ===
     TELEGRAM_BOT_TOKEN: str | None = None
@@ -103,6 +104,12 @@ class Settings(BaseSettings):
 
     # === Logging ===
     LOG_LEVEL: str = Field(default="INFO")
+
+    # === CORS ===
+    CORS_ORIGINS: str = Field(
+        default="http://localhost:3000,http://localhost:3001,http://localhost:3002",
+        description="Orígenes permitidos para CORS, separados por coma",
+    )
 
     # === Prompt Caching ===
     USE_PROMPT_CACHE: bool = Field(

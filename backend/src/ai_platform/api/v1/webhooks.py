@@ -597,17 +597,24 @@ async def _process_channel_message(
         Dict con resultado del proceso
     """
     from ai_platform.database import make_session
-    from ai_platform.models.channel_mapping import get_or_create_channel_mapping
+    from ai_platform.models.channel_mapping import get_channel_user_info
     from ai_platform.orchestrator.ragnar import get_ragnar
 
     ragnar = get_ragnar()
 
-    # Paso 1: Buscar mapeo de canal externo → usuario de plataforma
+    # Paso 1: Buscar mapeo de canal externo → usuario de plataforma (sin tenant_id)
     with make_session() as db:
-        mapping = get_or_create_channel_mapping(
+        mapping = get_channel_user_info(
+            channel=channel,
+            channel_user_id=user_id,
+        )
+
+    if not mapping:
+        # Primer mensaje: crear mapeo sin tenant_id específico
+        from ai_platform.models.channel_mapping import create_fallback_channel_mapping
+
+        mapping = create_fallback_channel_mapping(
             db=db,
-            tenant_id=None,
-            user_id=None,
             channel=channel,
             channel_user_id=user_id,
             channel_username=user_name,
@@ -823,7 +830,7 @@ def channel_update_channel(session_id: str, channel: str, chat_id: str):
         return
 
     with make_session() as db:
-        # Actualizar el mapa del canal si ya existe
+        # Actualizar el mapa del canal por channel_user_id (no por session_id)
         from sqlalchemy import text
 
         db.execute(
@@ -831,9 +838,7 @@ def channel_update_channel(session_id: str, channel: str, chat_id: str):
                 UPDATE channel_mappings
                 SET channel_chat_id = :chat_id
                 WHERE channel = :channel
-                  AND EXISTS (
-                    SELECT 1 FROM sessions WHERE sessions.id = channel_mappings.channel_user_id
-                  )
+                  AND channel_user_id IS NOT NULL
             """),
             {"chat_id": chat_id, "channel": channel},
         )
