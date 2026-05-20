@@ -73,7 +73,7 @@ async def lifespan(app: FastAPI):
     # Iniciar scheduler de cron jobs en background
     cron_mgr = get_cron_manager()
     scheduler_task = asyncio.create_task(cron_mgr.start_scheduler())
-    app.state["scheduler_task"] = scheduler_task
+    app.state.scheduler_task = scheduler_task
 
     yield
 
