@@ -402,7 +402,7 @@ async def telegram_webhook(request: Request):
     channel = TelegramChannel()
 
     # Validar webhook
-    validation = channel.validate_webhook(payload, dict(request.headers))
+    validation = await channel.validate_webhook(payload, dict(request.headers))
     if not validation.get("valid"):
         logger.warning(f"Telegram webhook no validado: {validation.get('reason')}")
         return {"status": "rejected", "reason": validation.get("reason")}
@@ -474,7 +474,7 @@ async def whatsapp_webhook(request: Request):
     channel = WhatsAppChannel()
 
     # Validar firma HMAC-SHA256
-    validation = channel.validate_webhook(payload, dict(request.headers))
+    validation = await channel.validate_webhook(payload, dict(request.headers))
     if not validation.get("valid"):
         logger.warning(f"WhatsApp webhook no validado: {validation.get('reason')}")
         return {"status": "rejected", "reason": validation.get("reason", "firma_invalida")}
