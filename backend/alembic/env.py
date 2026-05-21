@@ -23,7 +23,7 @@ from ai_platform.models.db import (
     Task,
     UsageEvent,
     AgentMemory,
-    Session,
+    ConversationSession,
     Message,
 )
 
