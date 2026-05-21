@@ -1,5 +1,5 @@
 """
-Observabilidad para el orquestador Ragnar.
+Observabilidad para el orquestador Odin.
 
 Registra cada decisión crítica del orquestador para:
 - Debugging y troubleshooting
@@ -42,7 +42,7 @@ class DecisionLogger:
 
     Registra CADA decisión de routing con metadata completa.
     Esto es crítico para:
-    - Debugging: entender por qué Ragnar eligió un módulo
+    - Debugging: entender por qué Odin eligió un módulo
     - Análisis: identificar patrones de usage
     - Optimización: ver qué módulos se usan más
     - Auditoría: rastrear todas las decisiones del sistema
@@ -60,7 +60,7 @@ class DecisionLogger:
         Cada decisión incluye:
         - tenant_id: quién hizo la petición
         - prompt: lo que el usuario dijo (truncado)
-        - module: qué módulo eligió Ragnar
+        - module: qué módulo eligió Odin
         - confidence: score de confianza
         - reasoning: por qué tomó esa decisión
 
@@ -86,7 +86,7 @@ class DecisionLogger:
 
         # Log de resumen para desarrolladores
         logger.debug(
-            f"[Ragnar Decision #{self._decision_count}] "
+            f"[Odin Decision #{self._decision_count}] "
             f"module={module}, confidence={decision.get('confidence', 0):.2f}, "
             f"reasoning={decision.get('reasoning', '')[:100]}"
         )

@@ -128,16 +128,16 @@ class BaseChannel:
         raw_payload: Any,
         tenant_id: str,
         session_manager=None,
-        ragnar=None,
+        odin_inst=None,
     ) -> dict[str, Any]:
         """
-        Manejar un webhook completo: validar → extraer → Ragnar → enviar respuesta.
+        Manejar un webhook completo: validar → extraer → Odin → enviar respuesta.
 
         Este es el método template que orquesta todo el flujo:
         1. Validar webhook (autenticidad)
         2. Extraer mensaje (user_id, text, chat_id)
         3. Buscar o crear mapeo de canal a usuario de plataforma
-        4. Llamar a Ragnar.decide() para routing
+        4. Llamar a Odin.decide() para routing
         5. Ejecutar el módulo seleccionado
         6. Enviar respuesta al canal
         7. Guardar mensaje en la tabla messages
@@ -146,7 +146,7 @@ class BaseChannel:
             raw_payload: Payload crudo del webhook del canal
             tenant_id: ID del tenant actual
             session_manager: SessionManager para gestionar sesiones
-            ragnar: Instancia de Ragnar para decisiones de routing
+            Odin: Instancia de Odin para decisiones de routing
 
         Retorna:
             Dict con resultado del procesamiento
@@ -190,21 +190,21 @@ class BaseChannel:
             )
             platform_user_id = str(mapping.user_id) if mapping else None
 
-        # Paso 4: Llamar a Ragnar.decide()
-        if not ragnar:
-            from ai_platform.orchestrator.ragnar import get_ragnar
+        # Paso 4: Llamar a Odin.decide()
+        if not odin_inst:
+            from ai_platform.orchestrator.odin import get_odin
 
-            ragnar = get_ragnar()
+            odin_inst = get_odin()
 
         try:
-            decision = await ragnar.decide(
+            decision = await odin_inst.decide(
                 prompt=message_text,
                 tenant_id=platform_tenant_id,
                 user_id=platform_user_id,
                 session_id=None,
             )
         except Exception as e:
-            logger.error(f"Error en Ragnar.decide(): {e}")
+            logger.error(f"Error en Odin.decide(): {e}")
             await self.send_message(chat_id, "Lo siento, hubo un error procesando tu mensaje. Intenta de nuevo.")
             return {"status": "error", "message": str(e)}
 
@@ -212,11 +212,11 @@ class BaseChannel:
         session_id = decision["session_id"]
 
         logger.info(
-            f"Decisión de Ragnar: module={module}, action={decision['action']}, confidence={decision['confidence']:.2f}"
+            f"Decisión de Odin: module={module}, action={decision['action']}, confidence={decision['confidence']:.2f}"
         )
 
         # Paso 5: Ejecutar el módulo seleccionado (síncrono, no Celery)
-        module_result = await self._execute_module_sync(ragnar, decision, str(mapping.tenant_id))
+        module_result = await self._execute_module_sync(odin_inst, decision, str(mapping.tenant_id))
 
         # Paso 6: Construir respuesta para el usuario
         if module_result.get("status") == "success" or module_result.get("status") == "completed":
@@ -266,18 +266,18 @@ class BaseChannel:
 
     async def _execute_module_sync(
         self,
-        ragnar: Any,
+        odin_inst: Any,
         decision: dict[str, Any],
         tenant_id: str,
     ) -> dict[str, Any]:
         """
         Ejecutar el módulo seleccionado de forma síncrona.
 
-        Reutiliza la lógica de Ragnar._invoke_module() pero ejecuta
+        Reutiliza la lógica de Odin._invoke_module() pero ejecuta
         de forma síncrona sin pasar por Celery.
 
         Parámetros:
-            ragnar: Instancia de Ragnar
+            Odin: Instancia de Odin
             decision: Decisión de routing
             tenant_id: ID del tenant
 

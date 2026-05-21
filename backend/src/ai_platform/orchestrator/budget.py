@@ -1,5 +1,5 @@
 """
-Tracker de budget para Ragnar.
+Tracker de budget para Odin.
 
 Controla el uso de tokens y costos por tarea y tenant.
 

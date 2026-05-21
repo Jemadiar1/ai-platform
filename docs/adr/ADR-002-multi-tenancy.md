@@ -35,7 +35,7 @@ Flujos que ya propagan o usan tenant:
 - `GET /api/v1/tasks` filtra por `tenant_id`.
 - `GET /api/v1/tenants/me` consulta el tenant actual desde dependencia de auth.
 - Webhooks de canales resuelven o intentan resolver tenant mediante mapping.
-- Ragnar recibe `tenant_id` en decisiones y ejecución.
+- Odin recibe `tenant_id` en decisiones y ejecución.
 - Memoria, sesiones y eventos de uso están diseñados con alcance de tenant.
 
 ## Brechas Actuales

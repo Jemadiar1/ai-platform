@@ -1,5 +1,5 @@
 """
-Sistema de plugins para extender funcionalidad de Ragnar.
+Sistema de plugins para extender funcionalidad de Odin.
 
 Inspirado en el sistema de plugins de Hermes Agent. Permite agregar
 nuevos comportamientos sin modificar el código principal del orquestador.
@@ -33,10 +33,10 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PluginSpec:
     """
-    Especificación de un plugin de Ragnar.
+    Especificación de un plugin de Odin.
 
     Define el ciclo de vida y los puntos de gancho (hooks) de un plugin.
-    Cada hook se ejecuta en un momento específico del flujo de Ragnar.
+    Cada hook se ejecuta en un momento específico del flujo de Odin.
 
     Atributos:
         name: Identificador único del plugin
@@ -44,8 +44,8 @@ class PluginSpec:
         description: Descripción legible del plugin
         enabled: Si el plugin está activo
         load_order: Orden de carga (menor = primero)
-        on_start: Hook ejecutado al iniciar Ragnar
-        on_stop: Hook ejecutado al detener Ragnar
+        on_start: Hook ejecutado al iniciar Odin
+        on_stop: Hook ejecutado al detener Odin
         on_decide: Hook ejecutado antes/después de decide()
         on_execute: Hook ejecutado antes/después de execute()
         on_message: Hook ejecutado antes de enviar respuesta al cliente
@@ -67,9 +67,9 @@ class PluginSpec:
 
 class PluginManager:
     """
-    Gestiona el ciclo de vida de plugins de Ragnar.
+    Gestiona el ciclo de vida de plugins de Odin.
 
-    Los plugins permiten extender la funcionalidad de Ragnar sin
+    Los plugins permiten extender la funcionalidad de Odin sin
     modificar su código central. Cada plugin puede conectar hooks
     en puntos específicos del flujo de ejecución.
 

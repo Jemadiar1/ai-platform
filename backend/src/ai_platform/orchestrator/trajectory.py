@@ -2,7 +2,7 @@
 Seguimiento de trayectorias (tracking de decisiones y acciones).
 
 Inspirado en el sistema de tracking de Hermes Agent. Rastrea cada paso
-que Ragnar toma durante el procesamiento de una tarea, incluyendo
+que Odin toma durante el procesamiento de una tarea, incluyendo
 decisiones, acciones, resultados y métricas de performance.
 
 Patrones implementados:
@@ -94,7 +94,7 @@ class Trajectory:
     """
     Representa una trayectoria completa de una interacción.
 
-    Una trayectoria agrupa todos los pasos que Ragnar tomó
+    Una trayectoria agrupa todos los pasos que Odin tomó
     para procesar una solicitud del usuario, desde la decisión
     inicial hasta la ejecución final.
 
@@ -177,7 +177,7 @@ class Trajectory:
 
 class TrajectoryManager:
     """
-    Gestiona el tracking de trayectorias de Ragnar.
+    Gestiona el tracking de trayectorias de Odin.
 
     Cada interacción del usuario genera una trayectoria que
     registra todas las decisiones y acciones tomadas. Esto es

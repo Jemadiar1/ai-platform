@@ -16,8 +16,8 @@ Los routers se agrupan por resource:
 
 from fastapi import APIRouter
 
+from ai_platform.api.v1.odin import router as odin_router
 from ai_platform.api.v1.ping import router as ping_router
-from ai_platform.api.v1.ragnar import router as ragnar_router
 from ai_platform.api.v1.tasks import router as tasks_router
 from ai_platform.api.v1.tenants import router as tenants_router
 from ai_platform.api.v1.webhooks import router as webhooks_router
@@ -27,7 +27,7 @@ router = APIRouter()
 
 # Incluir routers con prefijo
 router.include_router(ping_router)
-router.include_router(ragnar_router, prefix="/ragnar", tags=["ragnar"])
+router.include_router(odin_router, prefix="/odin", tags=["odin"])
 router.include_router(tasks_router, prefix="/tasks", tags=["tasks"])
 router.include_router(tenants_router, prefix="/tenants", tags=["tenants"])
 router.include_router(webhooks_router)

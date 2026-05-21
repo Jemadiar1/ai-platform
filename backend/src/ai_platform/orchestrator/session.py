@@ -1,5 +1,5 @@
 """
-Gestión de sesiones para el orquestador Ragnar.
+Gestión de sesiones para el orquestador Odin.
 
 Inspirado en el sistema de sessiones de Hermes Agent (hermes_state.py).
 

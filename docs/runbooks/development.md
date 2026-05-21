@@ -215,7 +215,7 @@ Advertencia: algunos scripts de despliegue todavía prueban `http://localhost:40
 ## Brechas Conocidas Que Afectan Desarrollo
 
 - `channel_mappings` está referenciado por webhooks, pero no está en el modelo SQLAlchemy principal ni en la ruta de migración copiada por Docker.
-- `Ragnar._invoke_module()` todavía no ejecuta handlers reales.
+- `Odin._invoke_module()` todavía no ejecuta handlers reales.
 - El dashboard intenta leer `/api/v1/usage`, pero la API no expone esa ruta.
 - `WHATSAPP_APP_SECRET` falta en `Settings`.
 - Prometheus apunta a `api-gateway:4000`, que no representa el despliegue actual.

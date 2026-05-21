@@ -39,7 +39,7 @@ Backend Poetry:
 - FastAPI
 - SQLAlchemy
 - Alembic
-- Ragnar
+- Odin
 - módulos Python `ai_*`
 - worker Celery
 

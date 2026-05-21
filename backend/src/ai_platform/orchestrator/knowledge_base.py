@@ -1,5 +1,5 @@
 """
-Base de conocimiento vectorizada para Ragnar.
+Base de conocimiento vectorizada para Odin.
 
 Implementa búsqueda semántica simple usando TF-IDF (sin dependencias externas
 como FAISS o Chroma) para mantener el proyecto ligero.

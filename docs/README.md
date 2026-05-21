@@ -13,7 +13,7 @@ Estado: 2026-05-20
 
 ## Estado General
 
-El backend productivo actual vive en `backend/src/ai_platform` y usa FastAPI, SQLAlchemy, Ragnar, módulos Python y worker Celery.
+El backend productivo actual vive en `backend/src/ai_platform` y usa FastAPI, SQLAlchemy, Odin, módulos Python y worker Celery.
 
 El workspace TypeScript mantiene apps, paquetes, servicios y workers, pero varias piezas siguen en estado scaffold o prototipo. La documentación vigente distingue explícitamente esas piezas para evitar asumir que todo el monorepo está listo para producción.
 

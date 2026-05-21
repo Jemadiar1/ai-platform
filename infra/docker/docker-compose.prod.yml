@@ -2,7 +2,7 @@
 # Docker Compose para Producción en VPS
 # ============================================================
 # Servicios:
-#   - app: AI Platform backend (FastAPI + Ragnar)
+#   - app: AI Platform backend (FastAPI + Odin)
 #   - postgres: Base de datos PostgreSQL
 #   - redis: Broker de Celery
 #   - nginx: Reverse proxy con HTTPS
@@ -54,7 +54,7 @@ services:
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
 
-      # LLM (Ragnar)
+      # LLM (Odin)
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - OPENROUTER_API_URL=https://openrouter.ai/api/v1
 

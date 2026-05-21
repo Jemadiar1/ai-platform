@@ -408,7 +408,7 @@ class SkillCommandManager:
         """
         Muestra las skills disponibles.
 
-        Lista todos los módulos que Ragnar puede usar:
+        Lista todos los módulos que Odin puede usar:
         ai-connect, ai-content, ai-social, etc.
 
         Parámetros:
@@ -432,7 +432,7 @@ class SkillCommandManager:
         response = "Skills disponibles:\n\n"
         for module, description in skills_info.items():
             response += f"  • {module}: {description}\n"
-        response += "\nRagnar selecciona automáticamente el skill más apropiado."
+        response += "\nOdin selecciona automáticamente el skill más apropiado."
         return {"response": response}
 
     async def _cmd_model(self, params: dict[str, Any], tenant_id: str, session_id: str) -> dict[str, Any]:

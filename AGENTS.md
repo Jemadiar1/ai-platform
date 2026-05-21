@@ -93,7 +93,7 @@ AI Platform es un monorepo híbrido.
 Runtime principal actual:
 
 - `backend/src/ai_platform`: backend Python con FastAPI, SQLAlchemy, Alembic,
-  Ragnar, webhooks, canales, módulos Python y worker Celery.
+  Odin, webhooks, canales, módulos Python y worker Celery.
 - API versionada bajo `/api/v1`.
 - PostgreSQL es la persistencia principal.
 - Redis soporta infraestructura asíncrona/cache.
@@ -173,8 +173,8 @@ Estas brechas están documentadas y no deben ocultarse con cambios parciales:
   respetar la ruta canónica del cambio.
 - `channel_mappings` es usado por webhooks y SQL manual, pero no está alineado
   entre modelo principal y migraciones canónicas.
-- `Ragnar._invoke_module()` todavía devuelve un placeholder; el flujo directo
-  de Ragnar no ejecuta handlers reales de forma productiva.
+- `Odin._invoke_module()` todavía devuelve un placeholder; el flujo directo
+  de Odin no ejecuta handlers reales de forma productiva.
 - `POST /api/v1/tasks` crea tareas, pero la publicación a Celery sigue
   pendiente.
 - `apps/dashboard` intenta consumir `/api/v1/usage`, endpoint que actualmente
@@ -397,10 +397,10 @@ comportamiento, contratos, comandos, despliegue ni arquitectura observable.
 - Nunca hardcodees secretos, tokens ni credenciales.
 - No imprimas secretos en logs, errores, respuestas HTTP ni tests.
 - Valida entradas externas, especialmente webhooks y payloads que llegan a
-  Ragnar o a módulos `ai-*`.
+  Odin o a módulos `ai-*`.
 - Conserva aislamiento por tenant en API, workers, memoria, billing, usage y
   observabilidad.
-- Revisa implicaciones de prompt injection cuando el cambio toque Ragnar,
+- Revisa implicaciones de prompt injection cuando el cambio toque Odin,
   knowledge base, memoria, plugins, skills o subagentes.
 
 ## Estilo De Cambios

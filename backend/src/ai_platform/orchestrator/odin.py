@@ -1,7 +1,7 @@
 """
-Motor de decisión principal de Ragnar.
+Motor de decisión principal de Odin.
 
-Ragnar recibe un input del usuario y decide:
+Odin recibe un input del usuario y decide:
 1. Qué módulo ejecutar (LLM-based + rule-based fallback)
 2. Qué parámetros extraer del input
 3. Si necesita descomposición en múltiples módulos
@@ -13,8 +13,8 @@ Integración con SOUL.md:
 - Registra observabilidad en decisiones críticas
 
 Uso:
-    ragnar = Ragnar()
-    decision = await ragnar.decide(prompt, tenant_id, history)
+    Odin = Odin()
+    decision = await Odin.decide(prompt, tenant_id, history)
     # decision = {module, action, params, confidence, ...}
 """
 
@@ -36,11 +36,11 @@ from ai_platform.orchestrator.trajectory import Step, TrajectoryManager
 logger = logging.getLogger(__name__)
 
 
-class Ragnar:
+class Odin:
     """
     El orquestador principal de AI Platform.
 
-    Ragnar es el cerebro que decide qué módulo especializado
+    Odin es el cerebro que decide qué módulo especializado
     debe actuar en cada tarea. Mantiene el contexto de sesión,
     la memoria y coordina la ejecución entre los 7 módulos.
 
@@ -75,7 +75,7 @@ class Ragnar:
         """
         Decidir qué módulo debe ejecutar una tarea.
 
-        Este es el método central de Ragnar. Flujos:
+        Este es el método central de Odin. Flujos:
         1. Sanitizar input contra inyección
         2. Cargar contexto de sesión
         3. Escanear memoria relevante
@@ -104,7 +104,7 @@ class Ragnar:
         """
         # Paso 0: Validar tenant_id (principio de SOUL.md)
         if not tenant_id:
-            raise ValueError("tenant_id es obligatorio para toda decisión de Ragnar")
+            raise ValueError("tenant_id es obligatorio para toda decisión de Odin")
 
         # Paso 1: Sanitizar input contra inyección de prompts
         scan_result = scanner.scan(prompt)
@@ -245,7 +245,7 @@ class Ragnar:
         task_id: str,
     ) -> dict[str, Any]:
         """
-        Ejecutar una tarea basada en la decisión de Ragnar.
+        Ejecutar una tarea basada en la decisión de Odin.
 
         Este método coordina la ejecución del módulo seleccionado:
         1. Inyectar contexto de sesión y memoria en la payload
@@ -430,7 +430,7 @@ class Ragnar:
         4. Manejo de errores y timeouts
         5. Registro de observabilidad
 
-        Brecha documentada: Ragnar.execute() no ejecuta handlers reales.
+        Brecha documentada: Odin.execute() no ejecuta handlers reales.
         Los módulos de negocio están implementados pero no son invocados
         por el orquestador en esta fase.
 
@@ -454,15 +454,15 @@ class Ragnar:
 
 
 # Instancia global
-_ragnar: Ragnar | None = None
+_odin: Odin | None = None
 
 
-def get_ragnar() -> Ragnar:
+def get_odin() -> Odin:
     """
-    Obtener la instancia de Ragnar.
+    Obtener la instancia de Odin.
     Patrón singleton: se crea UNA SOLA VEZ y se reutiliza.
     """
-    global _ragnar
-    if _ragnar is None:
-        _ragnar = Ragnar()
-    return _ragnar
+    global _odin
+    if _odin is None:
+        _odin = Odin()
+    return _odin

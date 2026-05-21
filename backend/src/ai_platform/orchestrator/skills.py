@@ -1,5 +1,5 @@
 """
-Gestión de skills para Ragnar.
+Gestión de skills para Odin.
 
 Inspirado en el sistema de skills de Hermes Agent:
 - Progressive disclosure (skills_list → skill_view → skill_view(path))

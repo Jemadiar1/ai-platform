@@ -1,5 +1,5 @@
 """
-Gestor de tareas programadas (cron jobs) para Ragnar.
+Gestor de tareas programadas (cron jobs) para Odin.
 
 Inspirado en Hermes Agent's cron scheduler.
 Permite programar tareas automáticas por tenant.

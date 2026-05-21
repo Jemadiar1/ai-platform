@@ -1,7 +1,7 @@
 """
 Cliente OpenRouter para decisiones de orquestación.
 
-Ragnar usa un LLM para decidir:
+Odin usa un LLM para decidir:
 - Qué módulo ejecutar dado un input del usuario
 - Qué parámetros extraer del input
 - Cuánto contexto proporcionar a cada módulo
@@ -56,7 +56,7 @@ class LLMClient:
     """
     Cliente OpenRouter para decisiones de orquestación.
 
-    Encapsula las llamadas a LLM que Ragnar usa para:
+    Encapsula las llamadas a LLM que Odin usa para:
     - Clasificar y enrutar tareas
     - Descomponer tareas complejas en subtasks
     - Extraer parámetros de los inputs de usuario
@@ -89,7 +89,7 @@ class LLMClient:
         """
         Decidir qué módulo debe ejecutar una tarea.
 
-        Este es el método central de Ragnar. Usa Claude-3.5-Sonnet
+        Este es el método central de Odin. Usa Claude-3.5-Sonnet
         para analizar el prompt del usuario y decidir:
         1. Qué módulo es el más apropiado
         2. Qué acción dentro de ese módulo
@@ -392,14 +392,14 @@ class LLMClient:
         """
         Construir el prompt de sistema para la decisión de routing.
 
-        Este prompt define las reglas de decisión de Ragnar usando
+        Este prompt define las reglas de decisión de Odin usando
         los principios de SOUL.md como guía.
 
         Este contenido se cachea en Claude (si está habilitado)
         porque es estático y se repite en cada llamada.
         """
         base = (
-            "Ragnar es el orquestador principal de AI Platform. "
+            "Odin es el orquestador principal de AI Platform. "
             "Tu trabajo es decidir qué módulo especializado debe ejecutar "
             "cada tarea del usuario.\n\n"
             "Módulos disponibles:\n"
@@ -491,7 +491,7 @@ class LLMClient:
         Construir el prompt para descomposición de tareas.
         """
         return (
-            "Eres Ragnar, el orquestador de AI Platform. "
+            "Eres Odin, el orquestador de AI Platform. "
             "Tu trabajo es descomponer tareas complejas en pasos simples.\n\n"
             "Cada paso debe ser un módulo específico con su acción.\n"
             "Módulos: ai-connect, ai-content, ai-social, ai-leads, ai-ads, ai-analytics, ai-web\n\n"
@@ -522,7 +522,7 @@ class LLMClient:
         Construir el prompt para extracción de parámetros.
         """
         return (
-            f"Eras Ragnar, el orquestador de AI Platform.\n\n"
+            f"Eras Odin, el orquestador de AI Platform.\n\n"
             f"El módulo '{module}' quiere ejecutar la acción '{action}'.\n"
             f"Extrae los parámetros relevantes del input del usuario.\n"
             f"Responde SIEMPRE en formato JSON válido.\n"

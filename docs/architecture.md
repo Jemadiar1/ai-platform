@@ -7,7 +7,7 @@ Referencia de revisión local: `61978ae`
 
 AI Platform es hoy un monorepo híbrido:
 
-- El núcleo operativo está en `backend/src/ai_platform`: FastAPI, SQLAlchemy, Alembic, Ragnar, webhooks, canales, módulos Python y worker Celery.
+- El núcleo operativo está en `backend/src/ai_platform`: FastAPI, SQLAlchemy, Alembic, Odin, webhooks, canales, módulos Python y worker Celery.
 - El workspace TypeScript con pnpm y Turborepo contiene apps Next.js, paquetes compartidos, servicios y workers scaffold.
 - La infraestructura de producción está orientada a un contenedor Python detrás de Nginx, con PostgreSQL y Redis en red privada.
 
@@ -20,9 +20,9 @@ flowchart TD
     U[Usuarios, admins y canales externos] --> NGINX[Nginx TLS reverse proxy]
     NGINX --> API[FastAPI backend<br/>backend/src/ai_platform]
     API --> ROUTERS[API v1 routers]
-    ROUTERS --> RAGNAR[Ragnar orchestrator]
-    RAGNAR --> LLM[OpenRouter / NaN / fallback rule-based]
-    RAGNAR --> MODS[Python modules ai-*]
+    ROUTERS --> Odin[Odin orchestrator]
+    Odin --> LLM[OpenRouter / NaN / fallback rule-based]
+    Odin --> MODS[Python modules ai-*]
     API --> DB[(PostgreSQL)]
     API --> REDIS[(Redis)]
     API --> CELERY[Celery task runner]
@@ -39,11 +39,11 @@ flowchart TD
 `backend/src/ai_platform` es la parte más completa del producto.
 
 - `main.py`: crea la aplicación FastAPI, registra routers, configura CORS local, agrega logging middleware y arranca `CronManager` en startup.
-- `api/v1`: expone ping, health, tenants, tasks, Ragnar y webhooks.
+- `api/v1`: expone ping, health, tenants, tasks, Odin y webhooks.
 - `models/db.py`: define `Tenant`, `User`, `Task`, `UsageEvent`, `AgentMemory`, `Session` y `Message`.
 - `database.py`: configura SQLAlchemy síncrono y sesiones.
 - `core/config.py`: centraliza settings con Pydantic.
-- `orchestrator`: contiene Ragnar, cliente LLM, memoria, sesiones, knowledge base, rate limits, pricing, plugins, subagentes, skills y observabilidad.
+- `orchestrator`: contiene Odin, cliente LLM, memoria, sesiones, knowledge base, rate limits, pricing, plugins, subagentes, skills y observabilidad.
 - `modules`: contiene handlers Python para `ai-connect`, `ai-web`, `ai-content`, `ai-social`, `ai-leads`, `ai-ads` y `ai-analytics`.
 - `channels`: adaptadores para Telegram, WhatsApp y Discord.
 - `workers/task_runner.py`: worker Celery que ejecuta módulos dinámicamente y registra estado/usage.
@@ -54,7 +54,7 @@ Rutas principales bajo `/api/v1`:
 
 - `GET /ping`
 - `GET /health`
-- `POST /ragnar/decide`
+- `POST /Odin/decide`
 - `POST /tasks`
 - `GET /tasks`
 - `GET /tasks/{task_id}`
@@ -70,9 +70,9 @@ Rutas principales bajo `/api/v1`:
 
 No existe actualmente un endpoint `/api/v1/usage`, aunque el dashboard lo intenta consumir.
 
-### Orquestador Ragnar
+### Orquestador Odin
 
-Ragnar decide y coordina tareas:
+Odin decide y coordina tareas:
 
 - evalúa señales de prompt injection;
 - crea o recupera sesiones;
@@ -83,7 +83,7 @@ Ragnar decide y coordina tareas:
 - decide módulo, acción, parámetros y necesidad de subagentes;
 - registra trayectoria, métricas y eventos de memoria.
 
-Limitación actual importante: `Ragnar._invoke_module()` todavía devuelve un placeholder. El worker Celery sí intenta importar handlers reales, pero el flujo directo de Ragnar no ejecuta todavía los módulos de negocio de forma productiva.
+Limitación actual importante: `Odin._invoke_module()` todavía devuelve un placeholder. El worker Celery sí intenta importar handlers reales, pero el flujo directo de Odin no ejecuta todavía los módulos de negocio de forma productiva.
 
 ### Módulos De Negocio
 
@@ -113,7 +113,7 @@ El workspace pnpm incluye:
 - `apps/website`: placeholder Next.js.
 - `packages/shared-types`, `shared-schemas`, `shared-prompts`, `ui-kit`, `sdk`: paquetes compartidos mínimos.
 - `services/api-gateway`: servicio Fastify mínimo con `/health` y `/api/v1/ping`.
-- `services/orchestrator`: configuración y Dockerfile, sin runtime TS equivalente al Ragnar Python.
+- `services/orchestrator`: configuración y Dockerfile, sin runtime TS equivalente al Odin Python.
 - `workers/scheduler` y `workers/task-runner`: workers TS mínimos que devuelven estado ready.
 
 El backend productivo no depende hoy del `services/api-gateway` TS. En producción, Nginx enruta directamente al contenedor Python.
@@ -193,7 +193,7 @@ Riesgo actual: Prometheus todavía apunta a `api-gateway:4000`, lo cual no refle
 ## Brechas Principales
 
 1. Alinear `channel_mappings` entre modelos, migraciones y webhooks.
-2. Conectar `Ragnar._invoke_module()` con handlers reales o eliminar el camino placeholder.
+2. Conectar `Odin._invoke_module()` con handlers reales o eliminar el camino placeholder.
 3. Corregir la diferencia entre el endpoint `/api/v1/usage` esperado por dashboard y la API real.
 4. Hacer que CORS lea configuración de entorno en vez de valores locales hardcodeados.
 5. Agregar `WHATSAPP_APP_SECRET` a settings/env o eliminar su uso.

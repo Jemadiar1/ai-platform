@@ -2,7 +2,7 @@
 Integración de Telegram para AI Platform.
 
 Permite enviar y recibir mensajes a través de un bot de Telegram.
-El bot responde a los mensajes del usuario y los enruta a Ragnar
+El bot responde a los mensajes del usuario y los enruta a Odin
 para decidir qué módulo ejecutar.
 
 Configuración:

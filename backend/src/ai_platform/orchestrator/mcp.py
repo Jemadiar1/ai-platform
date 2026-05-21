@@ -2,7 +2,7 @@
 Soporte para Model Context Protocol (MCP) de Hermes Agent.
 
 MCP permite que los modelos LLM accedan a herramientas externas
-de forma estandarizada. Implementamos un subset para Ragnar.
+de forma estandarizada. Implementamos un subset para Odin.
 
 Inspirado en:
 - Model Context Protocol (Anthropic)
@@ -47,7 +47,7 @@ class MCPClient:
     """
     Cliente MCP para conectar con herramientas externas.
 
-    Permite a los módulos de Ragnar acceder a:
+    Permite a los módulos de Odin acceder a:
     - Herramientas web (navegación, búsqueda)
     - Herramientas de código
     - Herramientas de datos

@@ -14,7 +14,7 @@ No reemplaza el reporte histórico `2026-04-16-architecture-refactor-report.md`;
 La base funcional principal está en el backend Python:
 
 - FastAPI expone la API real.
-- Ragnar coordina decisión, contexto, memoria, modelos y fallback.
+- Odin coordina decisión, contexto, memoria, modelos y fallback.
 - SQLAlchemy define las entidades principales.
 - PostgreSQL y Redis son las dependencias de datos.
 - Docker producción ejecuta el backend Python detrás de Nginx.
@@ -24,7 +24,7 @@ El workspace TypeScript sigue siendo útil como estructura de producto y futuro 
 - `apps/dashboard` es un prototipo.
 - `apps/admin` y `apps/website` son placeholders.
 - `services/api-gateway` es un Fastify mínimo.
-- `services/orchestrator` no reemplaza al Ragnar Python.
+- `services/orchestrator` no reemplaza al Odin Python.
 - `workers/scheduler` y `workers/task-runner` TS solo devuelven estado listo.
 
 ## Inventario Por Área
@@ -43,12 +43,12 @@ Ubicación: `backend/src/ai_platform`
 Componentes relevantes:
 
 - `main.py`: app FastAPI, routers, CORS, middleware de logging y startup de cron.
-- `api/v1`: ping, health, tenants, tasks, Ragnar y webhooks.
+- `api/v1`: ping, health, tenants, tasks, Odin y webhooks.
 - `core/config.py`: settings Pydantic.
 - `database.py`: engine y sesiones SQLAlchemy.
 - `models/db.py`: modelos principales.
 - `models/channel_mapping.py`: helpers SQL para `channel_mappings`.
-- `orchestrator`: Ragnar, LLM client, memoria, sesiones, pricing, rate limits, plugins, subagentes, skills y observabilidad.
+- `orchestrator`: Odin, LLM client, memoria, sesiones, pricing, rate limits, plugins, subagentes, skills y observabilidad.
 - `modules`: handlers Python para dominios `ai_*`.
 - `channels`: Telegram, WhatsApp y Discord.
 - `workers/task_runner.py`: Celery worker Python.
@@ -57,7 +57,7 @@ Componentes relevantes:
 
 - `GET /api/v1/ping`
 - `GET /api/v1/health`
-- `POST /api/v1/ragnar/decide`
+- `POST /api/v1/Odin/decide`
 - `POST /api/v1/tasks`
 - `GET /api/v1/tasks`
 - `GET /api/v1/tasks/{task_id}`
@@ -111,7 +111,7 @@ Esto es una brecha prioritaria porque afecta canales, webhooks y despliegue.
 
 ### Orquestación
 
-Ragnar implementa:
+Odin implementa:
 
 - detección inicial de prompt injection;
 - administración de sesión;
@@ -125,7 +125,7 @@ Ragnar implementa:
 
 Brecha principal:
 
-- `_invoke_module()` devuelve placeholder. El flujo directo de Ragnar no ejecuta todavía handlers reales.
+- `_invoke_module()` devuelve placeholder. El flujo directo de Odin no ejecuta todavía handlers reales.
 
 ### Módulos
 
@@ -234,7 +234,7 @@ Brecha:
 1. Elegir una sola ruta Alembic y mover `channel_mappings` a la migración canónica.
 2. Agregar modelo SQLAlchemy o migración explícita para `channel_mappings`.
 3. Conectar `POST /api/v1/tasks` con Celery o documentarlo como creación síncrona/pending.
-4. Conectar `Ragnar._invoke_module()` con handlers reales.
+4. Conectar `Odin._invoke_module()` con handlers reales.
 5. Alinear ejecución dinámica de webhooks con clases `Handler`.
 6. Implementar o remover consumo de `/api/v1/usage` en dashboard.
 7. Agregar `WHATSAPP_APP_SECRET` a settings/env.
@@ -249,7 +249,7 @@ Orden sugerido:
 1. Resolver migraciones y `channel_mappings`.
 2. Corregir settings faltantes y CORS.
 3. Conectar tareas async con Celery.
-4. Unificar ejecución de módulos entre Ragnar, worker y webhooks.
+4. Unificar ejecución de módulos entre Odin, worker y webhooks.
 5. Ajustar dashboard a endpoints reales o implementar `/api/v1/usage`.
 6. Actualizar observabilidad y scripts de deploy.
 7. Decidir si los scaffolds TS se mantienen como roadmap explícito o se reducen.

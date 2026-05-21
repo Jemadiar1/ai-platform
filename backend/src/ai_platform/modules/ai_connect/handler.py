@@ -218,7 +218,7 @@ class Handler:
         Flujo:
         1. Recibir mensaje del chat
         2. Buscar contexto en memoria del agente
-        3. Generar respuesta con el orquestador (Ragnar)
+        3. Generar respuesta con el orquestador (Odin)
         4. Retornar respuesta al chat
 
         Parámetros:
@@ -234,12 +234,12 @@ class Handler:
 
         logger.info(f"Manejando chat: {message[:50]}...")
 
-        # TODO: Integrar con el orquestador Ragnar para generar respuesta IA
+        # TODO: Integrar con el orquestador Odin para generar respuesta IA
         # from ai_platform.services.orchestrator import generate_response
         # response = await generate_response(message, session_id)
         # return {"message": message, "response": response, "status": "handled"}
 
-        return {"message": message, "response": "Stub - integrar con orquestador Ragnar", "status": "handled"}
+        return {"message": message, "response": "Stub - integrar con orquestador Odin", "status": "handled"}
 
     # ========================================================================
     # Agenda

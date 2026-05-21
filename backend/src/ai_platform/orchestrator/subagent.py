@@ -1,5 +1,5 @@
 """
-Sistema de subagentes para Ragnar.
+Sistema de subagentes para Odin.
 
 Inspirado en Hermes Agent: el agente principal puede crear subagentes
 especializados para tareas específicas, ejecutándolos en paralelo

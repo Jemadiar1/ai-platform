@@ -22,7 +22,7 @@ flowchart TD
     subgraph Backend[Backend Python]
         FASTAPI[FastAPI app<br/>backend/src/ai_platform/main.py]
         API[API v1 routers]
-        RAGNAR[Ragnar orchestrator]
+        Odin[Odin orchestrator]
         CHANNELS[Channel adapters]
         MODULES[Python modules ai-*]
         CELERY[Celery task runner]
@@ -41,9 +41,9 @@ flowchart TD
     DC --> NGINX
     NGINX --> FASTAPI
     FASTAPI --> API
-    API --> RAGNAR
+    API --> Odin
     API --> CHANNELS
-    RAGNAR --> MODULES
+    Odin --> MODULES
     API --> PG
     API --> REDIS
     CELERY --> MODULES
@@ -66,7 +66,7 @@ AI-Platform/
 │   │   ├── core/              # Settings y seguridad
 │   │   ├── models/            # SQLAlchemy y channel mappings SQL
 │   │   ├── modules/           # Handlers Python ai_*
-│   │   ├── orchestrator/      # Ragnar y subsistemas
+│   │   ├── orchestrator/      # Odin y subsistemas
 │   │   ├── services/          # Billing y servicios internos
 │   │   └── workers/           # Celery task runner
 │   ├── tests/                 # Pytest backend
@@ -127,13 +127,13 @@ sequenceDiagram
     participant Channel as Telegram/WhatsApp/Discord
     participant API as FastAPI webhook
     participant Map as channel_mappings
-    participant Ragnar
+    participant Odin
     participant Module as Module execution
     participant Adapter as Channel adapter
 
     Channel->>API: POST /api/v1/webhooks/{channel}
     API->>Map: busca o crea mapping
-    API->>Ragnar: decide módulo y acción
+    API->>Odin: decide módulo y acción
     API->>Module: ejecuta handler dinámico
     API->>Adapter: envía respuesta
     Adapter->>Channel: mensaje final
@@ -146,7 +146,7 @@ Riesgo: el flujo depende de `channel_mappings`, pero esa tabla no está alineada
 | Bloque | Estado actual |
 | --- | --- |
 | Backend FastAPI | Implementado y es el runtime principal. |
-| Ragnar | Implementado para decisión, contexto y fallback; ejecución directa de módulo sigue placeholder. |
+| Odin | Implementado para decisión, contexto y fallback; ejecución directa de módulo sigue placeholder. |
 | Worker Celery | Implementado parcialmente; no está conectado desde `POST /tasks`. |
 | Módulos Python | `ai-connect` tiene más lógica; el resto son stubs. |
 | Apps Next.js | Dashboard prototipo; admin y website placeholders. |

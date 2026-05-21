@@ -59,7 +59,7 @@ class ModelCatalog:
     """
     Catálogo completo de modelos disponibles.
 
-    Inyecta metadata de modelos en los prompts de Ragnar para
+    Inyecta metadata de modelos en los prompts de Odin para
     que el LLM pueda elegir el mejor modelo para cada tarea.
     """
 

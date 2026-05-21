@@ -580,9 +580,9 @@ async def _process_channel_message(
     """
     Procesar mensaje de cualquier canal de forma unificada.
 
-    Este método conecta el webhook del canal con el flujo de Ragnar completo:
+    Este método conecta el webhook del canal con el flujo de Odin completo:
     1. Buscar o crear mapeo de canal → usuario de plataforma
-    2. Llamar a Ragnar.decide() para routing del módulo
+    2. Llamar a Odin.decide() para routing del módulo
     3. Ejecutar el módulo seleccionado
     4. Enviar respuesta de vuelta al canal
 
@@ -598,9 +598,9 @@ async def _process_channel_message(
     """
     from ai_platform.database import make_session
     from ai_platform.models.channel_mapping import get_channel_user_info
-    from ai_platform.orchestrator.ragnar import get_ragnar
+    from ai_platform.orchestrator.odin import get_odin
 
-    ragnar = get_ragnar()
+    odin_inst = get_odin()
 
     # Paso 1: Buscar mapeo de canal externo → usuario de plataforma (sin tenant_id)
     with make_session() as db:
@@ -629,16 +629,16 @@ async def _process_channel_message(
     tenant_id = str(mapping.tenant_id)
     user_id_platform = str(mapping.user_id)
 
-    # Paso 2: Llamar a Ragnar para routing
+    # Paso 2: Llamar a Odin para routing
     try:
-        decision = await ragnar.decide(
+        decision = await odin_inst.decide(
             prompt=message_text,
             tenant_id=tenant_id,
             user_id=user_id_platform,
             session_id=None,
         )
     except Exception as e:
-        logger.error(f"Error en Ragnar.decide(): {e}")
+        logger.error(f"Error en Odin.decide(): {e}")
         await _send_channel_error(channel, chat_id, "Error interno")
         return {"status": "error", "message": str(e)}
 
@@ -820,7 +820,7 @@ def channel_update_channel(session_id: str, channel: str, chat_id: str):
     se encuentre su mapeo correctamente.
 
     Parámetros:
-        session_id: ID de la sesión de Ragnar
+        session_id: ID de la sesión de Odin
         channel: Canal ("telegram", "discord", "whatsapp")
         chat_id: Chat_id actual del usuario
     """

@@ -1,5 +1,5 @@
 """
-Sistema de memoria acotada para Ragnar.
+Sistema de memoria acotada para Odin.
 
 Inspirado en el sistema de memoria de Hermes Agent (hermes_state.py, tools/memory_tool.py).
 
@@ -245,7 +245,7 @@ class MemoryManager:
             "memory": memory_text,
             "user": user_text,
             "search_results": search_results,
-            "knowledge_relevant": [],  # Se llena desde ragnar con tenant_id
+            "knowledge_relevant": [],  # Se llena desde Odin con tenant_id
             "total_chars": len(memory_text) + len(user_text),
         }
 

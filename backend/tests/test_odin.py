@@ -1,5 +1,5 @@
 """
-Tests para el orquestador Ragnar.
+Tests para el orquestador Odin.
 
 Prueba:
 - decide() con diferentes prompts
@@ -15,22 +15,22 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from ai_platform.orchestrator.ragnar import Ragnar, get_ragnar
+from ai_platform.orchestrator.odin import Odin, get_odin
 from ai_platform.orchestrator.llm_client import ROUTING_MODELS
 
 
-class TestRagnarDecide:
+class TestOdinDecide:
     """Tests del método decide()."""
 
     @pytest.fixture
-    def ragnar(self):
-        """Crear instancia de Ragnar con mocks."""
-        with patch("ai_platform.orchestrator.ragnar.LLMClient") as mock_llm_cls, \
-             patch("ai_platform.orchestrator.ragnar.SessionManager") as mock_sm_cls, \
-             patch("ai_platform.orchestrator.ragnar.MemoryManager") as mock_mm_cls, \
-             patch("ai_platform.orchestrator.ragnar.SkillManager") as mock_skill_cls, \
-             patch("ai_platform.orchestrator.ragnar.BudgetTracker") as mock_budget_cls, \
-             patch("ai_platform.orchestrator.ragnar.DecisionLogger") as mock_dl_cls:
+    def odin_inst(self):
+        """Crear instancia de Odin con mocks."""
+        with patch("ai_platform.orchestrator.odin.LLMClient") as mock_llm_cls, \
+             patch("ai_platform.orchestrator.odin.SessionManager") as mock_sm_cls, \
+             patch("ai_platform.orchestrator.odin.MemoryManager") as mock_mm_cls, \
+             patch("ai_platform.orchestrator.odin.SkillManager") as mock_skill_cls, \
+             patch("ai_platform.orchestrator.odin.BudgetTracker") as mock_budget_cls, \
+             patch("ai_platform.orchestrator.odin.DecisionLogger") as mock_dl_cls:
 
             mock_llm = MagicMock()
             mock_llm.route_task = AsyncMock()
@@ -65,35 +65,35 @@ class TestRagnarDecide:
             mock_budget_cls.return_value = mock_budget
             mock_dl_cls.return_value = mock_dl
 
-            return Ragnar()
+            return Odin()
 
-    async def test_decide_requires_tenant_id(self, ragnar):
+    async def test_decide_requires_tenant_id(self, odin_inst):
         """decide() debe requerir tenant_id."""
         with pytest.raises(ValueError, match="tenant_id es obligatorio"):
-            await ragnar.decide(
+            await odin_inst.decide(
                 prompt="Hola",
                 tenant_id=None,
             )
 
-    async def test_decide_routes_ai_connect(self, ragnar):
+    async def test_decide_routes_ai_connect(self, odin_inst):
         """decide() debe enrutar prompts de mensajería a ai-connect."""
-        ragnar.llm_client.route_task = AsyncMock(return_value={
+        odin_inst.llm_client.route_task = AsyncMock(return_value={
             "module": "ai-connect",
             "action": "send_whatsapp",
             "confidence": 0.9,
             "reasoning": "El usuario quiere enviar un mensaje",
             "needs_decomposition": False,
         })
-        ragnar.session_manager.get_or_create = AsyncMock(return_value={
+        odin_inst.session_manager.get_or_create = AsyncMock(return_value={
             "id": "session-123",
             "tenant_id": "tenant-1",
         })
-        ragnar.session_manager.get_context = AsyncMock(return_value={
+        odin_inst.session_manager.get_context = AsyncMock(return_value={
             "recent_messages": [],
             "session_info": {},
         })
 
-        result = await ragnar.decide(
+        result = await odin_inst.decide(
             prompt="Enviar un mensaje de WhatsApp a +51999999999",
             tenant_id="tenant-1",
         )
@@ -103,25 +103,25 @@ class TestRagnarDecide:
         assert result["confidence"] == 0.9
         assert result["session_id"] == "session-123"
 
-    async def test_decide_routes_ai_social(self, ragnar):
+    async def test_decide_routes_ai_social(self, odin_inst):
         """decide() debe enrutar prompts de redes sociales a ai-social."""
-        ragnar.llm_client.route_task = AsyncMock(return_value={
+        odin_inst.llm_client.route_task = AsyncMock(return_value={
             "module": "ai-social",
             "action": "create_post",
             "confidence": 0.85,
             "reasoning": "El usuario quiere publicar en redes sociales",
             "needs_decomposition": False,
         })
-        ragnar.session_manager.get_or_create = AsyncMock(return_value={
+        odin_inst.session_manager.get_or_create = AsyncMock(return_value={
             "id": "session-456",
             "tenant_id": "tenant-1",
         })
-        ragnar.session_manager.get_context = AsyncMock(return_value={
+        odin_inst.session_manager.get_context = AsyncMock(return_value={
             "recent_messages": [],
             "session_info": {},
         })
 
-        result = await ragnar.decide(
+        result = await odin_inst.decide(
             prompt="Crear un post para Instagram sobre nuestro producto",
             tenant_id="tenant-1",
         )
@@ -129,25 +129,25 @@ class TestRagnarDecide:
         assert result["module"] == "ai-social"
         assert result["action"] == "create_post"
 
-    async def test_decide_routes_ai_web(self, ragnar):
+    async def test_decide_routes_ai_web(self, odin_inst):
         """decide() debe enrutar prompts de web a ai-web."""
-        ragnar.llm_client.route_task = AsyncMock(return_value={
+        odin_inst.llm_client.route_task = AsyncMock(return_value={
             "module": "ai-web",
             "action": "generate_page",
             "confidence": 0.95,
             "reasoning": "El usuario quiere generar una página web",
             "needs_decomposition": False,
         })
-        ragnar.session_manager.get_or_create = AsyncMock(return_value={
+        odin_inst.session_manager.get_or_create = AsyncMock(return_value={
             "id": "session-789",
             "tenant_id": "tenant-1",
         })
-        ragnar.session_manager.get_context = AsyncMock(return_value={
+        odin_inst.session_manager.get_context = AsyncMock(return_value={
             "recent_messages": [],
             "session_info": {},
         })
 
-        result = await ragnar.decide(
+        result = await odin_inst.decide(
             prompt="Crear una landing page para mi negocio",
             tenant_id="tenant-1",
         )
@@ -155,25 +155,25 @@ class TestRagnarDecide:
         assert result["module"] == "ai-web"
         assert result["action"] == "generate_page"
 
-    async def test_decide_handles_uncategorized(self, ragnar):
+    async def test_decide_handles_uncategorized(self, odin_inst):
         """decide() debe manejar prompts no categorizados."""
-        ragnar.llm_client.route_task = AsyncMock(return_value={
+        odin_inst.llm_client.route_task = AsyncMock(return_value={
             "module": "uncategorized",
             "action": "unknown",
             "confidence": 0.0,
             "reasoning": "No se pudo determinar el módulo",
             "needs_decomposition": False,
         })
-        ragnar.session_manager.get_or_create = AsyncMock(return_value={
+        odin_inst.session_manager.get_or_create = AsyncMock(return_value={
             "id": "session-uncat",
             "tenant_id": "tenant-1",
         })
-        ragnar.session_manager.get_context = AsyncMock(return_value={
+        odin_inst.session_manager.get_context = AsyncMock(return_value={
             "recent_messages": [],
             "session_info": {},
         })
 
-        result = await ragnar.decide(
+        result = await odin_inst.decide(
             prompt="algo que no encaja en ningún módulo",
             tenant_id="tenant-1",
         )
@@ -181,10 +181,10 @@ class TestRagnarDecide:
         assert result["module"] == "uncategorized"
         assert result["confidence"] == 0.0
 
-    async def test_decide_handles_llm_failure(self, ragnar):
+    async def test_decide_handles_llm_failure(self, odin_inst):
         """decide() debe manejar fallos del LLM con fallback."""
-        ragnar.llm_client.route_task = AsyncMock(side_effect=RuntimeError("API key no configurada"))
-        ragnar.llm_client._route_with_fallback = AsyncMock(return_value={
+        odin_inst.llm_client.route_task = AsyncMock(side_effect=RuntimeError("API key no configurada"))
+        odin_inst.llm_client._route_with_fallback = AsyncMock(return_value={
             "module": "ai-connect",
             "action": "send_message",
             "params": {},
@@ -192,16 +192,16 @@ class TestRagnarDecide:
             "reasoning": "Rule-based: detected messaging keywords",
             "needs_decomposition": False,
         })
-        ragnar.session_manager.get_or_create = AsyncMock(return_value={
+        odin_inst.session_manager.get_or_create = AsyncMock(return_value={
             "id": "session-fallback",
             "tenant_id": "tenant-1",
         })
-        ragnar.session_manager.get_context = AsyncMock(return_value={
+        odin_inst.session_manager.get_context = AsyncMock(return_value={
             "recent_messages": [],
             "session_info": {},
         })
 
-        result = await ragnar.decide(
+        result = await odin_inst.decide(
             prompt="Enviar mensaje de WhatsApp",
             tenant_id="tenant-1",
         )
@@ -209,25 +209,25 @@ class TestRagnarDecide:
         assert result["module"] == "ai-connect"
         assert result["confidence"] == 0.7
 
-    async def test_decide_returns_session_id(self, ragnar):
+    async def test_decide_returns_session_id(self, odin_inst):
         """decide() debe retornar session_id."""
-        ragnar.llm_client.route_task = AsyncMock(return_value={
+        odin_inst.llm_client.route_task = AsyncMock(return_value={
             "module": "ai-content",
             "action": "generate",
             "confidence": 0.8,
             "reasoning": "Generar contenido",
             "needs_decomposition": False,
         })
-        ragnar.session_manager.get_or_create = AsyncMock(return_value={
+        odin_inst.session_manager.get_or_create = AsyncMock(return_value={
             "id": "session-returned",
             "tenant_id": "tenant-1",
         })
-        ragnar.session_manager.get_context = AsyncMock(return_value={
+        odin_inst.session_manager.get_context = AsyncMock(return_value={
             "recent_messages": [],
             "session_info": {},
         })
 
-        result = await ragnar.decide(
+        result = await odin_inst.decide(
             prompt="Generar un blog post sobre marketing",
             tenant_id="tenant-1",
         )
@@ -235,25 +235,25 @@ class TestRagnarDecide:
         assert "session_id" in result
         assert result["session_id"] == "session-returned"
 
-    async def test_decide_with_existing_session(self, ragnar):
+    async def test_decide_with_existing_session(self, odin_inst):
         """decide() debe reutilizar sesión existente."""
-        ragnar.llm_client.route_task = AsyncMock(return_value={
+        odin_inst.llm_client.route_task = AsyncMock(return_value={
             "module": "ai-content",
             "action": "generate",
             "confidence": 0.8,
             "reasoning": "Generar contenido",
             "needs_decomposition": False,
         })
-        ragnar.session_manager.get_or_create = AsyncMock(return_value={
+        odin_inst.session_manager.get_or_create = AsyncMock(return_value={
             "id": "existing-session",
             "tenant_id": "tenant-1",
         })
-        ragnar.session_manager.get_context = AsyncMock(return_value={
+        odin_inst.session_manager.get_context = AsyncMock(return_value={
             "recent_messages": [{"role": "user", "content": "Hola"}],
             "session_info": {"id": "existing-session"},
         })
 
-        result = await ragnar.decide(
+        result = await odin_inst.decide(
             prompt="Continuar con el blog post",
             tenant_id="tenant-1",
             session_id="existing-session",
@@ -263,18 +263,18 @@ class TestRagnarDecide:
         assert len(result.get("session_context", {}).get("recent_messages", [])) > 0
 
 
-class TestRagnarExecute:
+class TestOdinExecute:
     """Tests del método execute()."""
 
     @pytest.fixture
-    def ragnar(self):
-        """Crear instancia de Ragnar con mocks."""
-        with patch("ai_platform.orchestrator.ragnar.LLMClient") as mock_llm_cls, \
-             patch("ai_platform.orchestrator.ragnar.SessionManager") as mock_sm_cls, \
-             patch("ai_platform.orchestrator.ragnar.MemoryManager") as mock_mm_cls, \
-             patch("ai_platform.orchestrator.ragnar.SkillManager") as mock_skill_cls, \
-             patch("ai_platform.orchestrator.ragnar.BudgetTracker") as mock_budget_cls, \
-             patch("ai_platform.orchestrator.ragnar.DecisionLogger") as mock_dl_cls:
+    def odin_inst(self):
+        """Crear instancia de Odin con mocks."""
+        with patch("ai_platform.orchestrator.odin.LLMClient") as mock_llm_cls, \
+             patch("ai_platform.orchestrator.odin.SessionManager") as mock_sm_cls, \
+             patch("ai_platform.orchestrator.odin.MemoryManager") as mock_mm_cls, \
+             patch("ai_platform.orchestrator.odin.SkillManager") as mock_skill_cls, \
+             patch("ai_platform.orchestrator.odin.BudgetTracker") as mock_budget_cls, \
+             patch("ai_platform.orchestrator.odin.DecisionLogger") as mock_dl_cls:
 
             mock_llm = MagicMock()
             mock_llm.route_task = AsyncMock()
@@ -309,16 +309,16 @@ class TestRagnarExecute:
             mock_budget_cls.return_value = mock_budget
             mock_dl_cls.return_value = mock_dl
 
-            return Ragnar()
+            return Odin()
 
-    async def test_execute_uncategorized_fails(self, ragnar):
+    async def test_execute_uncategorized_fails(self, odin_inst):
         """execute() debe fallar para módulo uncategorized."""
         decision = {
             "module": "uncategorized",
             "params": {},
         }
 
-        result = await ragnar.execute(
+        result = await odin_inst.execute(
             decision=decision,
             tenant_id="tenant-1",
             task_id="task-1",
@@ -327,14 +327,14 @@ class TestRagnarExecute:
         assert result["status"] == "failed"
         assert "error" in result["result"]
 
-    async def test_execute_unsupported_module(self, ragnar):
+    async def test_execute_unsupported_module(self, odin_inst):
         """execute() debe manejar módulos no soportados."""
         decision = {
             "module": "ai-unknown",
             "params": {},
         }
 
-        result = await ragnar.execute(
+        result = await odin_inst.execute(
             decision=decision,
             tenant_id="tenant-1",
             task_id="task-2",
@@ -343,14 +343,14 @@ class TestRagnarExecute:
         assert result["status"] == "error"
         assert "no soportado" in result["error"]
 
-    async def test_execute_enriches_payload(self, ragnar):
+    async def test_execute_enriches_payload(self, odin_inst):
         """execute() debe enriquecer la payload con contexto."""
-        ragnar.budget_tracker.begin_task = AsyncMock()
-        ragnar.budget_tracker.end_task = AsyncMock()
-        ragnar.memory_manager.sync_turn = AsyncMock()
+        odin_inst.budget_tracker.begin_task = AsyncMock()
+        odin_inst.budget_tracker.end_task = AsyncMock()
+        odin_inst.memory_manager.sync_turn = AsyncMock()
 
         # Mock del _invoke_module para interceptar la payload
-        original_invoke = ragnar._invoke_module
+        original_invoke = odin_inst._invoke_module
         captured_payload = {}
 
         async def mock_invoke(module, payload):
@@ -358,7 +358,7 @@ class TestRagnarExecute:
             captured_payload = payload
             return {"status": "ok"}
 
-        ragnar._invoke_module = mock_invoke
+        odin_inst._invoke_module = mock_invoke
 
         decision = {
             "module": "ai-connect",
@@ -367,7 +367,7 @@ class TestRagnarExecute:
             "memory_context": {"memory": "test memory"},
         }
 
-        await ragnar.execute(
+        await odin_inst.execute(
             decision=decision,
             tenant_id="tenant-1",
             task_id="task-3",
@@ -378,18 +378,18 @@ class TestRagnarExecute:
         assert "memory_context" in captured_payload
 
 
-class TestRagnarSingleton:
+class TestOdinSingleton:
     """Tests del patrón singleton."""
 
-    def test_get_ragnar_returns_instance(self):
-        """get_ragnar() debe retornar una instancia de Ragnar."""
-        with patch("ai_platform.orchestrator.ragnar.LLMClient"), \
-             patch("ai_platform.orchestrator.ragnar.SessionManager"), \
-             patch("ai_platform.orchestrator.ragnar.MemoryManager"), \
-             patch("ai_platform.orchestrator.ragnar.SkillManager"), \
-             patch("ai_platform.orchestrator.ragnar.BudgetTracker"), \
-             patch("ai_platform.orchestrator.ragnar.DecisionLogger"):
+    def test_get_odin_returns_instance(self):
+        """get_Odin() debe retornar una instancia de Odin."""
+        with patch("ai_platform.orchestrator.odin.LLMClient"), \
+             patch("ai_platform.orchestrator.odin.SessionManager"), \
+             patch("ai_platform.orchestrator.odin.MemoryManager"), \
+             patch("ai_platform.orchestrator.odin.SkillManager"), \
+             patch("ai_platform.orchestrator.odin.BudgetTracker"), \
+             patch("ai_platform.orchestrator.odin.DecisionLogger"):
 
-            ragnar = get_ragnar()
-            assert ragnar is not None
-            assert isinstance(ragnar, Ragnar)
+            odin_inst = get_odin()
+            assert odin_inst is not None
+            assert isinstance(odin_inst, Odin)
