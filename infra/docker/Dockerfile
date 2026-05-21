@@ -60,6 +60,8 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 WORKDIR /app
 COPY backend/src ./src
 COPY backend/pyproject.toml ./
+COPY backend/alembic ./alembic
+COPY backend/alembic.ini ./
 
 # Crear directorio para logs y datos
 RUN mkdir -p /app/logs /data && chown -R appuser:appuser /app /data
