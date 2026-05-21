@@ -398,18 +398,15 @@ async def telegram_webhook(request: Request):
 
     logger = logging.getLogger(__name__)
 
-    payload = await request.body()
+    payload_bytes = await request.body()
+    update_data = json.loads(payload_bytes)
     channel = TelegramChannel()
 
     # Validar webhook
-    validation = await channel.validate_webhook(payload, dict(request.headers))
+    validation = await channel.validate_webhook(update_data, dict(request.headers))
     if not validation.get("valid"):
         logger.warning(f"Telegram webhook no validado: {validation.get('reason')}")
         return {"status": "rejected", "reason": validation.get("reason")}
-
-    import json
-
-    update_data = json.loads(payload)
 
     # Extraer datos del mensaje
     message = update_data.get("message", {})
