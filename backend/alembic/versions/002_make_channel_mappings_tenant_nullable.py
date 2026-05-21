@@ -16,7 +16,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "002_make_channel_mappings_tenant_nullable"
-down_revision: Union[str, None] = "001_initial_schema"
+down_revision: Union[str, None] = "001"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
