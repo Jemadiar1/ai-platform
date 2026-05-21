@@ -154,9 +154,20 @@ Canales presentes:
 - Clerk
 - Stripe
 
-Hallazgos:
+Estado de Telegram (actualizado 2026-05-21):
 
-- WhatsApp verifica firma con `WHATSAPP_APP_SECRET`, pero ese setting falta.
+- Webhook configurado como modo de conexión (no polling, no ngrok, no cloudflare tunnel).
+- RUTA PÚBLICA: `https://<dominio>/api/v1/webhooks/telegram` (publicado por Nginx en puerto 443).
+- VALIDACIÓN: `X-Telegram-Bot-Api-Secret-Token` header verificado contra `TELEGRAM_WEBHOOK_SECRET`.
+- `TelegramChannel` separa `token` (bot token, para enviar) de `webhook_secret` (secret token, para validar webhooks).
+- Variables de configuración: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_URL`, `TELEGRAM_WEBHOOK_SECRET`.
+- Configuración en BotFather:
+  1. `@BotFather` → `/mybots` → selecciona tu bot → `Set Webhook` → URL pública
+  2. Opcional pero recomendado: `Set Webhook` → `Set Secret Token` → genera con `openssl rand -hex 32`
+
+Hallazgos restantes:
+
+- WhatsApp verifica firma con `WHATSAPP_APP_SECRET`, pero ese setting falta en `.env.example` (sí está en Settings).
 - El handler WhatsApp contiene lógica de challenge GET dentro de una ruta `POST`, por lo que esa rama no queda expuesta como GET.
 - La ejecución dinámica desde webhooks espera funciones `execute` o `execute_async` a nivel módulo, mientras los handlers reales están modelados como clases `Handler`.
 
@@ -231,25 +242,38 @@ Brecha:
 
 ## Brechas Prioritarias
 
-1. Elegir una sola ruta Alembic y mover `channel_mappings` a la migración canónica.
-2. Agregar modelo SQLAlchemy o migración explícita para `channel_mappings`.
+Estado 2026-05-21:
+
+1. ~~Elegir una sola ruta Alembic y mover `channel_mappings` a la migración canónica.~~ → RESUELTO: migración 002 crea `channel_mappings` nullable.
+2. ~~Agregar modelo SQLAlchemy o migración explícita para `channel_mappings`.~~ → RESUELTO: migración 002.
 3. Conectar `POST /api/v1/tasks` con Celery o documentarlo como creación síncrona/pending.
 4. Conectar `Odin._invoke_module()` con handlers reales.
 5. Alinear ejecución dinámica de webhooks con clases `Handler`.
 6. Implementar o remover consumo de `/api/v1/usage` en dashboard.
-7. Agregar `WHATSAPP_APP_SECRET` a settings/env.
+7. Agregar `WHATSAPP_APP_SECRET` a `.env.example` (ya está en Settings).
 8. Hacer CORS configurable desde entorno.
 9. Actualizar scripts de deploy para validar por Nginx.
 10. Actualizar Prometheus al target real.
 
+Resueltas en esta sesión (2026-05-21):
+
+- `channel_mappings.tenant_id` ahora es nullable (migración 002).
+- Bug de `db` fuera de scope en `_process_channel_message()` corregido.
+- `TelegramChannel` valida webhook contra `TELEGRAM_WEBHOOK_SECRET` (no bot token).
+- Variables `TELEGRAM_WEBHOOK_URL` y `TELEGRAM_WEBHOOK_SECRET` agregadas a Settings, `.env.example`, y compose.
+- Arquitectura de Telegram: webhook vía Nginx (puerto 443), sin ngrok ni cloudflare tunnel.
+
 ## Próximas Acciones Recomendadas
+
+Estado 2026-05-21 (después de resolver migraciones y Telegram webhook):
 
 Orden sugerido:
 
-1. Resolver migraciones y `channel_mappings`.
-2. Corregir settings faltantes y CORS.
-3. Conectar tareas async con Celery.
-4. Unificar ejecución de módulos entre Odin, worker y webhooks.
-5. Ajustar dashboard a endpoints reales o implementar `/api/v1/usage`.
-6. Actualizar observabilidad y scripts de deploy.
-7. Decidir si los scaffolds TS se mantienen como roadmap explícito o se reducen.
+1. ~~Resolver migraciones y `channel_mappings`.~~ → COMPLETADO: migración 002.
+2. Configurar Telegram webhook en VPS: registrar URL en BotFather, agregar secret token.
+3. Corregir settings faltantes y CORS.
+4. Conectar tareas async con Celery.
+5. Unificar ejecución de módulos entre Odin, worker y webhooks.
+6. Ajustar dashboard a endpoints reales o implementar `/api/v1/usage`.
+7. Actualizar observabilidad y scripts de deploy.
+8. Decidir si los scaffolds TS se mantienen como roadmap explícito o se reducen.

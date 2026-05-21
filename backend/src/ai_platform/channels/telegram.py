@@ -28,13 +28,27 @@ class TelegramChannel(BaseChannel):
 
     Envía y recibe mensajes a través de la Telegram Bot API.
     Implementa chunking para mensajes > 4096 caracteres (límite de Telegram).
+
+    Configuración:
+    - TELEGRAM_BOT_TOKEN: Token del bot desde @BotFather (para enviar mensajes)
+    - TELEGRAM_WEBHOOK_SECRET: Secret token para validar webhooks entrantes
+      (configurable en @BotFather -> Set Webhook -> Set Secret Token)
     """
 
     channel = "telegram"
 
-    def __init__(self, token: str | None = None):
+    def __init__(
+        self,
+        token: str | None = None,
+        webhook_secret: str | None = None,
+    ):
         self.settings = get_settings()
         self.token = token if token is not None else self.settings.TELEGRAM_BOT_TOKEN
+        self.webhook_secret = (
+            webhook_secret
+            if webhook_secret is not None
+            else self.settings.TELEGRAM_WEBHOOK_SECRET
+        )
         self.base_url = f"https://api.telegram.org/bot{self.token}" if self.token else ""
 
     async def validate_webhook(self, payload: Any, headers: dict | None = None) -> dict:
@@ -43,7 +57,7 @@ class TelegramChannel(BaseChannel):
 
         Verifica:
         1. El secret token del header X-Telegram-Bot-Api-Secret-Token
-           (requerido cuando se configura webhook con secret token en BotFather)
+           (configurado en @BotFather -> Set Webhook -> Set Secret Token)
         2. Que el update tenga update_id válido
         3. Que el mensaje no sea de un bot (para prevenir eco)
 
@@ -61,9 +75,10 @@ class TelegramChannel(BaseChannel):
             return {"valid": False, "reason": "payload_no_es_dict"}
 
         # Verificar secret token del header X-Telegram-Bot-Api-Secret-Token
-        if headers and self.token:
+        # Este secret es independiente del bot token y se configura en BotFather
+        if headers and self.webhook_secret:
             secret_token = headers.get("X-Telegram-Bot-Api-Secret-Token", "")
-            if secret_token and secret_token != self.token:
+            if secret_token and secret_token != self.webhook_secret:
                 logger.warning("X-Telegram-Bot-Api-Secret-Token no coincide")
                 return {"valid": False, "reason": "secret_token_no_coincide"}
 

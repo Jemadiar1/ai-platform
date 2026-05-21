@@ -214,8 +214,21 @@ Advertencia: algunos scripts de despliegue todavía prueban `http://localhost:40
 
 ## Brechas Conocidas Que Afectan Desarrollo
 
-- `channel_mappings` está referenciado por webhooks, pero no está en el modelo SQLAlchemy principal ni en la ruta de migración copiada por Docker.
+- `channel_mappings` ahora es nullable en tenant_id (migración 002). Ya no bloquea webhooks de canales.
 - `Odin._invoke_module()` todavía no ejecuta handlers reales.
 - El dashboard intenta leer `/api/v1/usage`, pero la API no expone esa ruta.
-- `WHATSAPP_APP_SECRET` falta en `Settings`.
+- `WHATSAPP_APP_SECRET` falta en `.env.example` (sí está en Settings).
 - Prometheus apunta a `api-gateway:4000`, que no representa el despliegue actual.
+
+## Telegram Webhook
+
+Configuración del canal Telegram (webhook mode):
+
+1. Crear bot en `@BotFather` → copiar token.
+2. Configurar webhook URL: `https://<dominio>/api/v1/webhooks/telegram`.
+3. Opcional: configurar secret token en `@BotFather` → `Set Webhook` → `Set Secret Token`.
+4. Variables de entorno:
+   - `TELEGRAM_BOT_TOKEN`: token del bot.
+   - `TELEGRAM_WEBHOOK_URL`: URL pública del endpoint webhook.
+   - `TELEGRAM_WEBHOOK_SECRET`: secret token (si se configuró en BotFather).
+5. Validar: enviar un mensaje al bot y verificar logs del contenedor `ai-platform-api`.

@@ -94,6 +94,8 @@ class Settings(BaseSettings):
 
     # === Telegram API ===
     TELEGRAM_BOT_TOKEN: str | None = None
+    TELEGRAM_WEBHOOK_URL: str | None = None
+    TELEGRAM_WEBHOOK_SECRET: str | None = None
 
     # === Discord API ===
     DISCORD_BOT_TOKEN: str | None = None

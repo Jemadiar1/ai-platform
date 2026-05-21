@@ -606,17 +606,17 @@ async def _process_channel_message(
             channel_user_id=user_id,
         )
 
-    if not mapping:
-        # Primer mensaje: crear mapeo sin tenant_id específico
-        from ai_platform.models.channel_mapping import create_fallback_channel_mapping
+        if not mapping:
+            # Primer mensaje: crear mapeo sin tenant_id específico
+            from ai_platform.models.channel_mapping import create_fallback_channel_mapping
 
-        mapping = create_fallback_channel_mapping(
-            db=db,
-            channel=channel,
-            channel_user_id=user_id,
-            channel_username=user_name,
-            channel_chat_id=chat_id,
-        )
+            mapping = create_fallback_channel_mapping(
+                db=db,
+                channel=channel,
+                channel_user_id=user_id,
+                channel_username=user_name,
+                channel_chat_id=chat_id,
+            )
 
     if not mapping:
         return {"status": "error", "message": "No se pudo crear mapeo de canal"}

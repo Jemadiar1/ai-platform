@@ -168,18 +168,17 @@ Antes de agregar una dependencia:
 
 Estas brechas están documentadas y no deben ocultarse con cambios parciales:
 
-- Existen dos árboles Alembic: `backend/alembic` y
-  `backend/migrations/alembic`. No agregues migraciones nuevas sin decidir o
-  respetar la ruta canónica del cambio.
-- `channel_mappings` es usado por webhooks y SQL manual, pero no está alineado
-  entre modelo principal y migraciones canónicas.
+- ~~Existen dos árboles Alembic: `backend/alembic` y~~ → ~~`backend/migrations/alembic`.~~
+  **RESUELTO (002):** `channel_mappings.tenant_id` ahora es nullable. Migración canónica: `backend/alembic`.
+- ~~`channel_mappings` es usado por webhooks y SQL manual, pero no está alineado~~
+  **RESUELTO (002):** migración 002 alinea `channel_mappings` con nullable tenant_id.
 - `Odin._invoke_module()` todavía devuelve un placeholder; el flujo directo
   de Odin no ejecuta handlers reales de forma productiva.
 - `POST /api/v1/tasks` crea tareas, pero la publicación a Celery sigue
   pendiente.
 - `apps/dashboard` intenta consumir `/api/v1/usage`, endpoint que actualmente
   no existe.
-- `WHATSAPP_APP_SECRET` se usa en el canal WhatsApp, pero falta en `Settings`.
+- `WHATSAPP_APP_SECRET` se usa en el canal WhatsApp, pero falta en `.env.example` (sí está en Settings).
 - CORS está hardcodeado en FastAPI aunque Compose productivo define
   `CORS_ORIGINS`.
 - Prometheus apunta a `api-gateway:4000`, no a la topología productiva actual
