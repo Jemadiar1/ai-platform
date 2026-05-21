@@ -39,11 +39,12 @@ def upgrade() -> None:
         nullable=True,
     )
 
-    # Eliminar el foreign key existente (no se puede modificar con nullable=True)
-    op.drop_constraint(
-        "fk_channel_mappings_tenant",
-        "channel_mappings",
-        type_="foreignkey",
+    # Eliminar el foreign key existente si existe
+    # La migración 001 crea el FK inline en create_table Y con create_foreign_key,
+    # por lo que puede haber dos FKs con el mismo nombre o solo uno.
+    # Usamos SQL directo para evitar problemas con drop_constraint.
+    op.execute(
+        "ALTER TABLE channel_mappings DROP CONSTRAINT IF EXISTS fk_channel_mappings_tenant"
     )
 
     # Re-crear el foreign key con ON DELETE CASCADE pero permitiendo NULL
