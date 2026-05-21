@@ -149,7 +149,7 @@ class SessionManager:
         Retorna:
             Session creada
         """
-        session_obj = Session(
+        session_obj = ConversationSession(
             id=str(uuid4()),
             tenant_id=tenant_id,
             user_id=user_id,

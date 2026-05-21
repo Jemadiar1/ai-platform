@@ -164,7 +164,7 @@ class AgentMemory(Base):
         return f"<AgentMemory(agent={self.agent_id}, type={self.type})>"
 
 
-class Session(Base):
+class ConversationSession(Base):
     """
     Tabla: sessions
 
@@ -191,7 +191,7 @@ class Session(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     def __repr__(self):
-        return f"<Session(id={self.id}, title={self.title}, msgs={self.message_count})>"
+        return f"<ConversationSession(id={self.id}, title={self.title}, msgs={self.message_count})>"
 
 
 class Message(Base):
