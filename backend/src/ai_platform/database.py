@@ -16,6 +16,7 @@ La versión "binary" ya viene compilada, no necesita C compiler en Windows.
 """
 
 from collections.abc import Generator
+from contextlib import contextmanager
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
@@ -78,6 +79,7 @@ def get_db_session() -> Generator[Session, None, None]:
         session.close()
 
 
+@contextmanager
 def make_session() -> Generator[Session, None, None]:
     """
     Crear manualmente una sesión de BD (para usar fuera de FastAPI).
