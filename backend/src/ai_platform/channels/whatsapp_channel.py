@@ -379,7 +379,7 @@ class WhatsAppChannel(BaseChannel):
         """
         if self.verify_token and token != self.verify_token:
             logger.warning(f"Verify token no coincide: esperado={self.verify_token}, recibido={token}")
-            return {"challenge": challenge}
+            return {"error": "verify_token_mismatch"}
 
         return {"challenge": challenge}
 

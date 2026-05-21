@@ -11,7 +11,30 @@ logger = logging.getLogger(__name__)
 
 
 class Handler:
+    """
+    Handler stub para el módulo ai-analytics.
+
+    GENERA REPORTES Y MÉTRICAS con IA.
+    Incluye: dashboards, KPIs, análisis de tendencias, predicciones.
+
+    Estado: STUB - Implementación pendiente (Fase comercial futura).
+
+    Acciones soportadas:
+        - generate_report: Generar reporte analítico
+    """
+
     def execute(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """
+        Ejecutar acción del módulo ai-analytics.
+
+        NOTA: Este es un stub. No genera reportes reales.
+
+        Parámetros:
+            payload: Dict con 'action' y parámetros analíticos
+
+        Retorna:
+            Dict con status 'success' y nota de stub
+        """
         action = payload.get("action", "default")
         logger.info(f"Ejecutando {action} en ai-analytics")
         return {

@@ -17,7 +17,6 @@ nunca ven datos de otros tenants.
 """
 
 from datetime import UTC, datetime
-from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -43,7 +42,7 @@ def create_task(
     task_data: TaskCreate,
     tenant: Tenant = Depends(get_current_tenant),
     db: Session = Depends(get_db_session),
-) -> dict[str, Any]:
+) -> TaskResponse:
     """
     Crear una nueva tarea para el módulo de IA.
 
@@ -115,7 +114,7 @@ def list_tasks(
     module_filter: str | None = Query(None, description="Filtrar por módulo"),
     limit: int = Query(50, ge=1, le=100, description="Máximo de resultados (1-100)"),
     offset: int = Query(0, ge=0, description="Offset para paginación"),
-):
+) -> list[TaskResponse]:
     """
     Listar tareas del tenant actual con paginación.
 
@@ -166,7 +165,7 @@ def get_task(
     task_id: UUID,
     tenant: Tenant = Depends(get_current_tenant),
     db: Session = Depends(get_db_session),
-):
+) -> TaskResponse:
     """
     Obtener una tarea específica por su ID.
 
@@ -205,7 +204,7 @@ def update_task(
     task_patch: TaskPatch,
     tenant: Tenant = Depends(get_current_tenant),
     db: Session = Depends(get_db_session),
-):
+) -> TaskResponse:
     """
     Actualizar parcialmente una tarea.
 
@@ -262,7 +261,7 @@ def delete_task(
     task_id: UUID,
     tenant: Tenant = Depends(get_current_tenant),
     db: Session = Depends(get_db_session),
-):
+) -> None:
     """
     Eliminar una tarea del sistema.
 

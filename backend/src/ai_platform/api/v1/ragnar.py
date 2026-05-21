@@ -36,6 +36,7 @@ Flujo:
 - El usuario puede confirmar o modificar antes de ejecutar
 """
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -129,10 +130,12 @@ def ragnar_decide(
     try:
         ragnar = get_ragnar()
 
-        decision = ragnar.decide(
-            prompt=request.prompt,
-            tenant_id=str(tenant.id),
-            session_id=request.session_id,
+        decision = asyncio.run(
+            ragnar.decide(
+                prompt=request.prompt,
+                tenant_id=str(tenant.id),
+                session_id=request.session_id,
+            )
         )
 
         return RagnarDecideResponse(

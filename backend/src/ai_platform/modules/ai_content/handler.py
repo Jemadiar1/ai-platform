@@ -11,7 +11,30 @@ logger = logging.getLogger(__name__)
 
 
 class Handler:
+    """
+    Handler stub para el módulo ai-content.
+
+    GENERA CONTENIDO DE MARKETING con IA.
+    Incluye: posts para redes sociales, blogs, emails, copy publicitario.
+
+    Estado: STUB - Implementación pendiente (Fase comercial futura).
+
+    Acciones soportadas:
+        - default: Generación genérica de contenido
+    """
+
     def execute(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """
+        Ejecutar acción del módulo ai-content.
+
+        NOTA: Este es un stub. No genera contenido real.
+
+        Parámetros:
+            payload: Dict con 'action' y parámetros de contenido
+
+        Retorna:
+            Dict con status 'success' y nota de stub
+        """
         action = payload.get("action", "default")
         logger.info(f"Ejecutando {action} en ai-content")
         return {

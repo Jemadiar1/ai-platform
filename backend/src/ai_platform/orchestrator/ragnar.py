@@ -421,8 +421,25 @@ class Ragnar:
         """
         Invocar al handler del módulo seleccionado.
 
-        En esta fase inicial, retorna un placeholder.
-        En producción, importará dinámicamente el handler del módulo.
+        NOTA: Este método es un placeholder en la fase actual.
+        Siempre retorna éxito sin ejecutar el handler real del módulo.
+        La implementación completa requiere:
+        1. Importación dinámica del handler desde ai_platform.modules.{module}.handler
+        2. Validación de payload contra el schema del módulo
+        3. Ejecución asíncrona del handler
+        4. Manejo de errores y timeouts
+        5. Registro de observabilidad
+
+        Brecha documentada: Ragnar.execute() no ejecuta handlers reales.
+        Los módulos de negocio están implementados pero no son invocados
+        por el orquestador en esta fase.
+
+        Parámetros:
+            module: Nombre del módulo (ej: "ai-connect")
+            payload: Payload enriquecido con contexto
+
+        Retorna:
+            Dict con resultado (placeholder: siempre "completed")
         """
         # TODO: Importación dinámica del handler
         # from ai_platform.modules.ai_connect.handler import execute

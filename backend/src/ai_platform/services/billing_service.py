@@ -191,44 +191,97 @@ class BillingService:
             ) from None
 
     async def _handle_subscription_created(self, event: dict) -> dict:
-        """Manejar nueva suscripción."""
+        """
+        Manejar evento customer.subscription.created de Stripe.
+
+        Extrae tenant_id y plan de la metadata de la suscripción.
+
+        NOTA: Placeholder. En producción debe actualizar el plan del tenant
+        en la base de datos local.
+
+        Parámetros:
+            event: Objeto Stripe subscription event
+
+        Retorna:
+            Dict con status, tenant_id y plan
+        """
         subscription = event.get("data", {}).get("object", {})
         tenant_id = subscription.get("metadata", {}).get("tenant_id")
         plan = subscription.get("items", {}).get("data", [{}])[0].get("price", {}).get("id", "").split("_")[2]
 
-        # TODO: Actualizar plan del tenant en nuestra BD
+        # TODO (Deuda): Actualizar plan del tenant en nuestra BD
         return {"status": "subscription_created", "tenant_id": tenant_id, "plan": plan}
 
     async def _handle_subscription_updated(self, event: dict) -> dict:
-        """Manejar cambio de suscripción."""
+        """
+        Manejar evento customer.subscription.updated de Stripe.
+
+        NOTA: Placeholder. Debe actualizar el plan en BD.
+
+        Parámetros:
+            event: Objeto Stripe subscription event
+
+        Retorna:
+            Dict con status y tenant_id
+        """
         subscription = event.get("data", {}).get("object", {})
         tenant_id = subscription.get("metadata", {}).get("tenant_id")
 
-        # TODO: Actualizar plan del tenant en nuestra BD
+        # TODO (Deuda): Actualizar plan del tenant en nuestra BD
         return {"status": "subscription_updated", "tenant_id": tenant_id}
 
     async def _handle_subscription_deleted(self, event: dict) -> dict:
-        """Manejar cancelación de suscripción."""
+        """
+        Manejar evento customer.subscription.deleted de Stripe.
+
+        NOTA: Placeholder. Debe cambiar plan a "free" en BD.
+
+        Parámetros:
+            event: Objeto Stripe subscription event
+
+        Retorna:
+            Dict con status y tenant_id
+        """
         subscription = event.get("data", {}).get("object", {})
         tenant_id = subscription.get("metadata", {}).get("tenant_id")
 
-        # TODO: Cambiar plan a "free" en nuestra BD
+        # TODO (Deuda): Cambiar plan a "free" en nuestra BD
         return {"status": "subscription_deleted", "tenant_id": tenant_id}
 
     async def _handle_payment_succeeded(self, event: dict) -> dict:
-        """Manejar pago exitoso."""
+        """
+        Manejar evento invoice.payment_succeeded de Stripe.
+
+        NOTA: Placeholder. Debe registrar pago en BD.
+
+        Parámetros:
+            event: Objeto Stripe invoice event
+
+        Retorna:
+            Dict con status y tenant_id
+        """
         invoice = event.get("data", {}).get("object", {})
         tenant_id = invoice.get("metadata", {}).get("tenant_id")
 
-        # TODO: Registrar pago exitoso
+        # TODO (Deuda): Registrar pago exitoso
         return {"status": "payment_succeeded", "tenant_id": tenant_id}
 
     async def _handle_payment_failed(self, event: dict) -> dict:
-        """Manejar pago fallido."""
+        """
+        Manejar evento invoice.payment_failed de Stripe.
+
+        NOTA: Placeholder. Debe notificar al tenant y cambiar a plan "free".
+
+        Parámetros:
+            event: Objeto Stripe invoice event
+
+        Retorna:
+            Dict con status y tenant_id
+        """
         invoice = event.get("data", {}).get("object", {})
         tenant_id = invoice.get("metadata", {}).get("tenant_id")
 
-        # TODO: Notificar al tenant y cambiar a plan "free"
+        # TODO (Deuda): Notificar al tenant y cambiar a plan "free"
         return {"status": "payment_failed", "tenant_id": tenant_id}
 
     async def get_tenant_plan(self, tenant_id: str) -> str:
