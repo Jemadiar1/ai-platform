@@ -410,3 +410,30 @@ class DocumentFTSIndex(Base):
 
     def __repr__(self):
         return f"<DocumentFTSIndex(document={self.document_id}, chunk={self.chunk_id})>"
+
+
+class OCRResult(Base):
+    """
+    Tabla: ocr_results
+
+    Resultados de análisis OCR con trazabilidad.
+    """
+
+    __tablename__ = "ocr_results"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id = Column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    source_filename = Column(String(500), nullable=True)
+    source_format = Column(String(20), nullable=False)
+    source_size_bytes = Column(Integer, nullable=False)
+    full_text = Column(Text, nullable=True)
+    overall_confidence = Column(Float, nullable=False)
+    engine_used = Column(String(20), nullable=False)
+    charts_data = Column(JSON, default=dict)
+    warnings = Column(JSON, default=list)
+    page_count = Column(Integer, default=1)
+    processing_time_ms = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    def __repr__(self):
+        return f"<OCRResult(tenant={self.tenant_id}, confidence={self.overall_confidence:.2f})>"
