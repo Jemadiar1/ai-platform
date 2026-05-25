@@ -647,11 +647,6 @@ class LLMClient:
         """
         model = self.settings.PRIMARY_MODEL or "qwen3.6"
 
-        system_instruction = (
-            "Eres un asistente de marketing digital de NeuralCrew Labs, una agencia 100% potenciada por IA. "
-            "Responde de forma útil, concisa y profesional en español."
-        )
-
         try:
             with httpx.Client(
                 base_url=self.settings.NAN_API_URL
@@ -667,7 +662,9 @@ class LLMClient:
                     "/chat/completions",
                     json={
                         "model": model,
-                        "prompt": f"{system_instruction}\n\nUser: {prompt}\n\nAssistant:",
+                        "messages": [
+                            {"role": "user", "content": f"Eres un asistente de marketing digital de NeuralCrew Labs, una agencia 100% potenciada por IA. Responde de forma útil, concisa y profesional en español. Usuario: {prompt}"},
+                        ],
                         "max_tokens": 1024,
                         "temperature": 0.7,
                     },
@@ -677,8 +674,6 @@ class LLMClient:
                     data = response.json()
                     if "choices" in data and len(data["choices"]) > 0:
                         content = data["choices"][0].get("message", {}).get("content", "")
-                        if not content:
-                            content = data["choices"][0].get("text", "")
                     else:
                         content = data.get("content", "")
                     if content and content.strip():
