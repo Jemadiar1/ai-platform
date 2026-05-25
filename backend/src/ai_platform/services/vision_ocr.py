@@ -230,7 +230,7 @@ class VisionOCRService:
             return text, avg_confidence / 100.0  # Tesseract devuelve 0-100
 
         except Exception as e:
-            logger.error("tesseract_failed", error=str(e))
+            logger.error(f"tesseract_failed: {e}")
             return "", 0.0
 
     def _detect_charts(self, image_bytes: bytes) -> list[dict[str, Any]]:
