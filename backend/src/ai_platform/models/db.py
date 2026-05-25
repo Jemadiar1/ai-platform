@@ -300,3 +300,34 @@ class Contact(Base):
 
     def __repr__(self):
         return f"<Contact(name={self.name}, tenant_id={self.tenant_id})>"
+
+
+class WebResearchResult(Base):
+    """
+    Tabla: web_research_results
+
+    Resultados de investigación web con trazabilidad completa:
+    - URL consultada, fecha, contenido
+    - Tenant que lo solicitó
+    - Quién lo solicitó (módulo u orquestador)
+    - Hash de contenido para deduplicación
+    """
+
+    __tablename__ = "web_research_results"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id = Column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    url = Column(Text, nullable=False)
+    title = Column(String(500), nullable=True)
+    content_hash = Column(String(64), nullable=False)
+    content = Column(Text, nullable=True)
+    content_type = Column(String(100), nullable=True)
+    size_bytes = Column(Integer, default=0)
+    status_code = Column(Integer, nullable=True)
+    fetch_date = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    source_by = Column(String(100), nullable=False)
+    task_id = Column(PG_UUID(as_uuid=True), nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    def __repr__(self):
+        return f"<WebResearchResult(url={self.url}, tenant={self.tenant_id})>"
