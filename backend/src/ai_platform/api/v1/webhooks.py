@@ -779,12 +779,20 @@ async def _send_to_channel(channel: str, chat_id: str | None, text: str) -> None
 def _extract_response_text(module_result: Any) -> str:
     """Extraer texto legible del resultado del módulo."""
     if isinstance(module_result, dict):
-        # Prioridad: result > response > message > datos
-        for key in ("result", "response", "message", "text"):
+        # Prioridad: response > message > text > result.nested > datos
+        for key in ("response", "message", "text"):
             if key in module_result:
                 val = module_result[key]
                 if isinstance(val, str) and val.strip():
                     return val[:4096]
+        # Si result es un dict, buscar dentro de él
+        if "result" in module_result and isinstance(module_result["result"], dict):
+            nested = module_result["result"]
+            for key in ("response", "message", "text", "reply"):
+                if key in nested:
+                    val = nested[key]
+                    if isinstance(val, str) and val.strip():
+                        return val[:4096]
         # Si hay cualquier campo con string, usar el primero
         for val in module_result.values():
             if isinstance(val, str) and val.strip():
