@@ -14,11 +14,11 @@ Multi-tenant: todos los resultados se asocian a tenant_id.
 import hashlib
 import logging
 import re
+import threading
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -43,14 +43,6 @@ class ResearchLevel(str, Enum):
 
     FETCH = "fetch"
     BROWSER = "browser"
-
-
-class ResearchSource(str, Enum):
-    """Fuente que solicitó la investigación."""
-
-    ODIN = "odin"
-    MODULE = "module"
-    MANUAL = "manual"
 
 
 @dataclass
@@ -236,7 +228,7 @@ class TenantRateLimiter:
 
     def __init__(self) -> None:
         self._timestamps: dict[str, list[float]] = {}
-        self._lock: Any = __import__("threading").Lock()
+        self._lock = threading.Lock()
 
     def is_allowed(self, tenant_id: str, level: ResearchLevel, plan: str = "free") -> tuple[bool, int]:
         """
@@ -315,7 +307,7 @@ class WebResearchService:
         self._cache: dict[str, tuple[FetchResult, float]] = {}
         self._cache_maxsize = 1000
         self._cache_ttl = 3600
-        self._cache_lock: Any = __import__("threading").Lock()
+        self._cache_lock = threading.Lock()
 
     async def fetch_url(
         self,
@@ -340,7 +332,7 @@ class WebResearchService:
         # 1. Validar URL (SSRF)
         is_safe, reason = SSRFBlocklist.is_safe_url(url)
         if not is_safe:
-            logger.warning("SSRF blocked", url=url, reason=reason, tenant_id=tenant_id)
+            logger.warning(f"SSRF blocked: url={url} reason={reason} tenant_id={tenant_id}")
             raise ValueError(f"URL bloqueada por seguridad: {reason}")
 
         # 2. Rate limiting
@@ -355,7 +347,7 @@ class WebResearchService:
         if not force_refresh:
             cached = self._get_cached(cache_key)
             if cached:
-                logger.info("Cache hit", url=url, tenant_id=tenant_id)
+                logger.info(f"Cache hit: url={url} tenant_id={tenant_id}")
                 cached.cached = True
                 return cached
 
@@ -394,13 +386,7 @@ class WebResearchService:
         self._save_to_db(fetch_result)
         self._log_usage_event(fetch_result, task_id)
 
-        logger.info(
-            "fetch_completed",
-            url=url,
-            tenant_id=tenant_id,
-            size=len(markdown_content),
-            cached=False,
-        )
+        logger.info(f"fetch_completed: url={url} tenant_id={tenant_id} size={len(markdown_content)} cached=False")
         return fetch_result
 
     async def fetch_search(
@@ -442,7 +428,7 @@ class WebResearchService:
                 )
                 results.append(result)
             except Exception as e:
-                logger.warning("Search result fetch failed", url=url, error=str(e))
+                logger.warning(f"Search result fetch failed: url={url} error={e!s}")
 
         return results
 
@@ -481,10 +467,10 @@ class WebResearchService:
         self.rate_limiter.record(tenant_id, ResearchLevel.BROWSER)
 
         try:
-            from playwright.sync_api import sync_playwright
+            from playwright.async_api import async_playwright
 
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
                 try:
                     context = browser.new_context(
                         viewport={"width": 1280, "height": 720},
@@ -495,36 +481,36 @@ class WebResearchService:
                     page = context.new_page()
                     page.set_default_timeout(timeout_ms or self.browser_timeout)
 
-                    response = page.goto(url, wait_until="domcontentloaded")
+                    response = await page.goto(url, wait_until="domcontentloaded")
 
                     if wait_for_selector:
                         try:
-                            page.wait_for_selector(wait_for_selector, timeout=10_000)
+                            await page.wait_for_selector(wait_for_selector, timeout=10_000)
                         except Exception:
-                            logger.warning("Selector timeout", selector=wait_for_selector, url=url)
+                            logger.warning(f"Selector timeout: selector={wait_for_selector} url={url}")
 
                     screenshot_b64 = None
                     if take_screenshot:
-                        screenshot_b64 = page.screenshot(type="jpeg", quality=60)
+                        screenshot_b64 = await page.screenshot(type="jpeg", quality=60)
 
-                    content = None
+                    page_content = None
                     if extract_content:
-                        html = page.content()
-                        _, content = self._extract_markdown(html, "text/html")
+                        html = await page.content()
+                        _, page_content = self._extract_markdown(html, "text/html")
 
                     return BrowserResult(
                         url=url,
                         screenshot_base64=screenshot_b64,
                         page_title=page.title(),
                         final_url=page.url,
-                        content=content,
+                        content=page_content,
                         fetch_date=datetime.now(UTC),
                         tenant_id=tenant_id,
                         source_by=source_by,
                         task_id=task_id,
                     )
                 except Exception as e:
-                    logger.error("Browser session failed", url=url, error=str(e))
+                    logger.error(f"Browser session failed: url={url} error={e}")
                     return BrowserResult(
                         url=url,
                         screenshot_base64=None,
@@ -538,10 +524,10 @@ class WebResearchService:
                         error=str(e),
                     )
                 finally:
-                    browser.close()
+                    await browser.close()
 
         except ImportError:
-            logger.error("Playwright not installed", url=url)
+            logger.error(f"Playwright not installed: url={url}")
             return BrowserResult(
                 url=url,
                 screenshot_base64=None,
