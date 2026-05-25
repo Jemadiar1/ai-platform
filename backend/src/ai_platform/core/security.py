@@ -2,12 +2,9 @@
 Utilidades de seguridad.
 
 Contiene funciones para:
-- Generar y validar tokens JWT
-- Hashear y verificar passwords
-- Cifrar datos sensibles
+- Decodificar tokens JWT (solo lectura, Clerk gestiona auth)
 - Escanear inyección de prompts (12 patrones de Hermes)
 - Sanitizar inputs LLM (stripping zero-width chars, RTL overrides)
-- Validar URLs contra SSRF (blocklist de IPs privadas)
 """
 
 import logging
@@ -15,7 +12,6 @@ import re
 import time
 from collections import OrderedDict
 from datetime import UTC, datetime, timedelta
-from ipaddress import ip_address, ip_network
 from typing import ClassVar
 from urllib.parse import urlparse
 
@@ -28,96 +24,18 @@ logger = logging.getLogger(__name__)
 
 
 # =========================================================================
-# JWT & PASSWORDS
+# JWT TOKEN DECODING (read-only, Clerk handles auth)
 # =========================================================================
 
 # Use bcrypt directly to avoid passlib's known bug with bcrypt 5.x
-# (passlib's detect_wrap_bug triggers false "password cannot be longer
-# than 72 bytes" errors from bcrypt 5.0.0 internals)
 _BCRYPT_ROUNDS = 12
-
-
-def hash_password(password: str) -> str:
-    """
-    Hashear un password plano.
-
-    Nunca guardamos passwords en texto plano.
-    bcrypt genera un hash + salt aleatorio.
-
-    Ejemplo:
-        hashed = hash_password("mi-password-123")
-        # "$2b$12$eXaMpLe$sAlTaNdHaShHeRe..."
-    """
-    salt = _bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)
-    hashed = _bcrypt.hashpw(password.encode("utf-8"), salt)
-    return hashed.decode("utf-8")
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """
-    Verificar un password plano contra un hash.
-
-    Ejemplo:
-        if verify_password("mi-password-123", stored_hash):
-            # Login exitoso
-    """
-    try:
-        return _bcrypt.checkpw(
-            plain_password.encode("utf-8"),
-            hashed_password.encode("utf-8"),
-        )
-    except (ValueError, TypeError):
-        return False
-
-
-def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
-    """
-    Crear un token JWT de acceso.
-
-    Flujo:
-        1. El usuario se autentica (Clerk, login, etc.)
-        2. Generamos un JWT con user_id, tenant_id y expiry
-        3. Enviamos el JWT al cliente
-        4. El cliente lo envía en cada request: Authorization: Bearer <jwt>
-        5. En el backend, verificamos la firma y extraemos los datos
-
-    Parámetros:
-        data: Diccionario con los claims (user_id, tenant_id, etc.)
-        expires_delta: Cuánto tiempo dura válido el token
-
-    Retorna:
-        Token JWT como string
-    """
-    settings = get_settings()
-
-    encode = data.copy()
-
-    if expires_delta:
-        expire = datetime.now(UTC) + expires_delta
-    else:
-        expire = datetime.now(UTC) + timedelta(hours=settings.JWT_EXPIRATION_HOURS)
-
-    encode.update({"exp": expire})
-
-    encoded_jwt = jwt.encode(encode, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
-
-    return encoded_jwt
 
 
 def decode_token(token: str) -> dict | None:
     """
     Decodificar y validar un token JWT.
 
-    Verifica que:
-    - El token tiene una firma válida
-    - El token no ha expirado
-    - Todos los claims requeridos están presentes
-
-    Parámetros:
-        token: Token JWT en string
-
-    Retorna:
-        Diccionario con los claims si es válido, None si no
+    Solo se usa para lectura de claims. Clerk gestiona la autenticación.
     """
     settings = get_settings()
 
@@ -370,106 +288,6 @@ class PromptSanitizer:
 
 
 prompt_sanitizer = PromptSanitizer()
-
-
-# =========================================================================
-# SSD (SSRF Protection)
-# =========================================================================
-
-
-class SSRFBlocklist:
-    """
-    Bloquear URLs contra SSRF (Server-Side Request Forgery).
-
-    Bloquea:
-    - IP addresses privadas (RFC 1918)
-    - Loopback (127.x.x.x, ::1)
-    - Link-local (169.254.x.x, fe80::)
-    - Cloud metadata endpoints (169.254.169.254 - AWS, GCP, Azure)
-    - Localhost
-    - Scheme dangerous (file://, gopher://, dict://)
-    """
-
-    # Networks privadas bloqueadas
-    _BLOCKED_NETWORKS: ClassVar[list] = [
-        ip_network("0.0.0.0/8"),  # "This" network
-        ip_network("10.0.0.0/8"),  # Private
-        ip_network("100.64.0.0/10"),  # CGNAT
-        ip_network("127.0.0.0/8"),  # Loopback
-        ip_network("169.254.0.0/16"),  # Link-local
-        ip_network("172.16.0.0/12"),  # Private
-        ip_network("192.0.0.0/24"),  # IANA IPv4
-        ip_network("192.0.2.0/24"),  # TEST-NET-1
-        ip_network("192.88.99.0/24"),  # 6to4 relay
-        ip_network("192.168.0.0/16"),  # Private
-        ip_network("198.18.0.0/15"),  # Benchmark test
-        ip_network("198.51.100.0/24"),  # TEST-NET-2
-        ip_network("203.0.113.0/24"),  # TEST-NET-3
-        ip_network("224.0.0.0/4"),  # Multicast
-        ip_network("240.0.0.0/4"),  # Reserved
-        ip_network("255.255.255.255/32"),  # Broadcast
-    ]
-
-    _DANGEROUS_SCHEMES: ClassVar[set] = {"file", "gopher", "dict", "ftp"}
-
-    _ALLOW_SCHEMES: ClassVar[set] = {"http", "https"}
-
-    # Localhost hostnames
-    _BLOCKED_HOSTNAMES: ClassVar[set] = {
-        "localhost",
-        "0.0.0.0",
-        "[::]",
-        "127.0.0.1",
-        "[::1]",
-    }
-
-    @classmethod
-    def is_safe_url(cls, url: str) -> bool:
-        """
-        Verificar que una URL es segura (no apunta a recursos internos).
-
-        Parámetros:
-            url: URL a verificar
-
-        Retorna:
-            True si segura, False si blocked
-        """
-        try:
-            parsed = urlparse(url)
-
-            # Verificar scheme
-            scheme = parsed.scheme.lower()
-            if scheme not in cls._ALLOW_SCHEMES:
-                return False
-
-            if scheme in cls._DANGEROUS_SCHEMES:
-                return False
-
-            # Verificar host
-            host = parsed.hostname
-            if not host:
-                return False
-
-            host_lower = host.lower()
-            if host_lower in cls._BLOCKED_HOSTNAMES:
-                return False
-
-            # Verificar si la IP es privada/segura
-            return not cls._is_private_ip(host)
-
-        except Exception:
-            return False
-
-    @classmethod
-    def _is_private_ip(cls, host: str) -> bool:
-        """Verificar si un host es una IP privada o local."""
-        try:
-            ip = ip_address(host)
-            return any(ip in net for net in cls._BLOCKED_NETWORKS)
-        except ValueError:
-            # No es una IP válida, podría ser un dominio DNS
-            # Considerarlo inseguro por defecto si no podemos verificarlo
-            return False
 
 
 # =========================================================================

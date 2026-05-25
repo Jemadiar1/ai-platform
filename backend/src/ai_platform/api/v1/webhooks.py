@@ -730,6 +730,8 @@ async def _process_channel_message(
 
     # Paso 5: Enviar respuesta de vuelta al canal
     response_text = _extract_response_text(module_result)
+    logger.info(f"Module result: {module_result}")
+    logger.info(f"Extracted response: {response_text[:200]}")
     if response_text:
         await _send_to_channel(channel, chat_id, response_text)
 
