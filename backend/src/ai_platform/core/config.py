@@ -118,6 +118,28 @@ class Settings(BaseSettings):
         default=True, description="Habilitar prompt caching para modelos Claude (ahorro 75% en costos)"
     )
 
+    # === Document Ingestion ===
+    DOCUMENT_STORAGE_ROOT: str = Field(
+        default="/data/documents",
+        description="Directorio raíz para almacenamiento de archivos de documentos",
+    )
+    MAX_UPLOAD_SIZE_MB: int = Field(
+        default=100,
+        description="Tamaño máximo de archivo subido en MB",
+    )
+    CHUNKING_MAX_SECTION_SIZE: int = Field(
+        default=2000,
+        description="Tamaño máximo por sección antes de split en chunks fijos",
+    )
+    CHUNKING_MAX_CHUNK_SIZE: int = Field(
+        default=1000,
+        description="Tamaño máximo de chars por chunk en modo fijo",
+    )
+    CHUNKING_OVERLAP: int = Field(
+        default=200,
+        description="Solapamiento de chars entre chunks adyacentes",
+    )
+
     @property
     def is_production(self) -> bool:
         """Verificar si estamos en producción"""
