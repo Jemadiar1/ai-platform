@@ -77,6 +77,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libleptonica-dev \
     # Document ingestion: python-magic
     libmagic1 \
+    # Report renderer: WeasyPrint
+    libpangocairo-1.0-0 \
+    libgdk-pixbuf2.0-0 \
+    libffi-dev \
+    shared-mime-info \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
