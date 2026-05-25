@@ -67,6 +67,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxshmfence1 \
     # Web research: content extraction
     libicu72 \
+    # Document ingestion: Tesseract OCR
+    tesseract-ocr \
+    tesseract-ocr-spa \
+    tesseract-ocr-eng \
+    libleptonica-dev \
+    # Document ingestion: python-magic
+    libmagic1 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 

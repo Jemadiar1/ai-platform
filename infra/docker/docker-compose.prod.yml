@@ -97,6 +97,7 @@ services:
 
     volumes:
       - ai-platform-logs:/app/logs
+      - document-storage:/data/documents
     networks:
       - ai-platform-network
 
@@ -175,6 +176,8 @@ volumes:
   redis-data:
     driver: local
   ai-platform-logs:
+    driver: local
+  document-storage:
     driver: local
 
 # ============================================================
