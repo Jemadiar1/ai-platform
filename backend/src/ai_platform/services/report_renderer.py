@@ -18,20 +18,14 @@ import io
 import logging
 import time
 from dataclasses import asdict
-from typing import Any
-
-from sqlalchemy import LargeBinary
 
 from ai_platform.core.config import get_settings
 from ai_platform.database import make_session
 from ai_platform.models.db import GeneratedReport, UsageEvent
 from ai_platform.services.report_models import (
-    BrandTheme,
-    ChartSpec,
     ChartType,
     ReportFormat,
     ReportSpec,
-    TableSpec,
 )
 
 logger = logging.getLogger(__name__)
@@ -113,6 +107,7 @@ class ReportRendererService:
     def _render_charts(self, spec: ReportSpec) -> dict[str, bytes]:
         """Renderizar todos los gráficos como PNG en memoria."""
         import matplotlib
+
         matplotlib.use("Agg")  # Backend sin GUI
         import matplotlib.pyplot as plt
 
@@ -161,7 +156,7 @@ class ReportRendererService:
 
     def _render_html(self, spec: ReportSpec, chart_images: dict[str, bytes]) -> str:
         """Renderizar HTML con Jinja2 + theme CSS variables + gráficos embebidos."""
-        from jinja2 import Environment, BaseLoader
+        from jinja2 import BaseLoader, Environment
 
         template = """<!DOCTYPE html>
 <html lang="es">
@@ -204,8 +199,8 @@ class ReportRendererService:
         {% for chart in section.charts %}
         <div class="chart">
             <h3>{{ chart.title }}</h3>
-            <img src="data:image/png;base64,{{ chart_images[chart.id] | b64encode }}"
-                 alt="{{ chart.title }}" width="{{ chart.width }}">
+            <img src="data:image/png;base64,{{ chart_b64[chart.id] }}"
+                  alt="{{ chart.title }}" width="{{ chart.width }}">
         </div>
         {% endfor %}
 
@@ -245,7 +240,7 @@ class ReportRendererService:
             audience=spec.audience,
             sections=spec.sections,
             theme=spec.theme,
-            chart_images=chart_b64,
+            chart_b64=chart_b64,
             generated_by=spec.generated_by,
             version=spec.version,
         )
@@ -333,7 +328,8 @@ class ReportRendererService:
 
                 for chart in section.charts:
                     ws.append(["Gráfico: " + chart.title])
-                    ws.append(chart.data)
+                    for d in chart.data:
+                        ws.append([d.get("label", ""), d.get("value", "")])
 
             buf = __import__("io").BytesIO()
             wb.save(buf)
@@ -345,7 +341,6 @@ class ReportRendererService:
 
     def _generate_csv(self, spec: ReportSpec) -> bytes:
         """Generar CSV desde ReportSpec."""
-        import csv
 
         buf = __import__("io").BytesIO()
         writer = __import__("csv").writer(buf)

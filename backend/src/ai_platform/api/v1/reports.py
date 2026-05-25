@@ -79,10 +79,7 @@ async def generate_report(
                 )
                 for t in s.get("tables", [])
             ]
-            citations = [
-                Citation(text=c["text"], source=c["source"], url=c.get("url"))
-                for c in s.get("citations", [])
-            ]
+            citations = [Citation(text=c["text"], source=c["source"], url=c.get("url")) for c in s.get("citations", [])]
             sections.append(
                 Section(
                     id=s["id"],
@@ -244,9 +241,7 @@ def download_report(
     media_types = {
         "html": "text/html",
         "pdf": "application/pdf",
-        "docx": (
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        ),
+        "docx": ("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
         "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "csv": "text/csv",
     }
@@ -266,7 +261,5 @@ def download_report(
     return StreamingResponse(
         BytesIO(content),
         media_type=media_types.get(format, "application/octet-stream"),
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename_map.get(format, "report")}"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="{filename_map.get(format, "report")}"'},
     )

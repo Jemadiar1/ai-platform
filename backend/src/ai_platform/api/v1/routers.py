@@ -20,8 +20,8 @@ from fastapi import APIRouter
 
 from ai_platform.api.v1.documents import router as documents_router
 from ai_platform.api.v1.odin import router as odin_router
-from ai_platform.api.v1.reports import router as reports_router
 from ai_platform.api.v1.ping import router as ping_router
+from ai_platform.api.v1.reports import router as reports_router
 from ai_platform.api.v1.tasks import router as tasks_router
 from ai_platform.api.v1.tenants import router as tenants_router
 from ai_platform.api.v1.web_research import router as web_research_router
