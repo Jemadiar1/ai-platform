@@ -303,14 +303,14 @@ class MemoryManager:
             with make_session() as db:
                 # Step 1: Get current total chars for this entry type
                 result = db.execute(
-                    text("""
+                    text(f"""
                         SELECT COALESCE(SUM(CHAR_LENGTH(content)), 0) as total
                         FROM agent_memory
                         WHERE agent_id = :session_id
                           AND type = :type
-                          AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id::uuid)
+                          AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = '{session_id}'::uuid)
                     """),
-                    {"session_id": session_id, "type": entry_type},
+                    {"type": entry_type},
                 ).first()
 
                 current_total_chars = result.total if result else 0
@@ -327,12 +327,12 @@ class MemoryManager:
 
                 # Step 3: Duplicate rejection (check before insert)
                 existing = db.execute(
-                    text("""
+                    text(f"""
                         SELECT id FROM agent_memory
                         WHERE agent_id = :session_id
                           AND type = :type
                           AND content = :content
-                          AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id::uuid)
+                          AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = '{session_id}'::uuid)
                     """),
                     {"session_id": session_id, "type": entry_type, "content": content},
                 ).first()
@@ -347,11 +347,11 @@ class MemoryManager:
                 # Step 4: Begin atomic insert
                 # Insert into agent_memory with checksum for integrity
                 db.execute(
-                    text("""
+                    text(f"""
                         INSERT INTO agent_memory (
                             tenant_id, agent_id, type, content, char_count, checksum, created_at
                         ) VALUES (
-                            (SELECT tenant_id FROM sessions WHERE id = :session_id::uuid),
+                            (SELECT tenant_id FROM sessions WHERE id = '{session_id}'::uuid),
                             :session_id,
                             :type, :content, :char_count, :checksum, NOW()
                         )
@@ -367,12 +367,12 @@ class MemoryManager:
 
                 # Step 5: Validate the write (checksum verification)
                 verify_result = db.execute(
-                    text("""
+                    text(f"""
                         SELECT checksum FROM agent_memory
                         WHERE agent_id = :session_id
                           AND type = :type
                           AND content = :content
-                          AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id::uuid)
+                          AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = '{session_id}'::uuid)
                         ORDER BY created_at DESC
                         LIMIT 1
                     """),
@@ -475,13 +475,13 @@ class MemoryManager:
 
         with make_session() as db:
             result = db.execute(
-                text("""
+                text(f"""
                     SELECT
                         COUNT(*) FILTER (WHERE type = 'memory') as memory_count,
                         COUNT(*) FILTER (WHERE type = 'user') as user_count
                     FROM agent_memory
                     WHERE agent_id = :session_id
-                      AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id::uuid)
+                      AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = '{session_id}'::uuid)
                 """),
                 {"session_id": session_id},
             ).first()
@@ -518,12 +518,12 @@ class MemoryManager:
         """
         with make_session() as db:
             result = db.execute(
-                text("""
+                text(f"""
                     SELECT content
                     FROM agent_memory
                     WHERE agent_id = :session_id
                       AND type = 'memory'
-                      AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id::uuid)
+                      AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = '{session_id}'::uuid)
                     ORDER BY created_at DESC
                 """),
                 {"session_id": session_id},
@@ -552,12 +552,12 @@ class MemoryManager:
         """
         with make_session() as db:
             result = db.execute(
-                text("""
+                text(f"""
                     SELECT content
                     FROM agent_memory
                     WHERE agent_id = :session_id
                       AND type = 'user'
-                      AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id::uuid)
+                      AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = '{session_id}'::uuid)
                     ORDER BY created_at DESC
                 """),
                 {"session_id": session_id},
