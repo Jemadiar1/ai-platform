@@ -30,7 +30,10 @@ COPY backend/pyproject.toml ./
 # Instilar Poetry, exportar a requirements.txt, instalar con pip
 RUN pip install poetry==1.8.5 && \
     poetry export --only main --format requirements.txt --output requirements.txt --without-hashes && \
-    pip install -r requirements.txt
+    pip install -r requirements.txt && \
+    # Instalar Playwright browsers
+    pip install playwright && \
+    python -m playwright install --with-deps chromium
 
 # ---- Stage 2: Runtime ----
 FROM python:3.11-slim AS runtime
@@ -46,6 +49,24 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Instilar solo lo necesario para runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Web research: Playwright (Chromium)
+    libglib2.0-0 \
+    libnss3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libasound2 \
+    libxshmfence1 \
+    # Web research: content extraction
+    libicu72 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
