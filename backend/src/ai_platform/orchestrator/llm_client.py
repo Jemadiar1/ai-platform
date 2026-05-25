@@ -624,11 +624,11 @@ class LLMClient:
             }
 
         return {
-            "module": "uncategorized",
-            "action": "unknown",
+            "module": "ai-connect",
+            "action": "send_message",
             "params": {},
-            "confidence": 0.0,
-            "reasoning": f"No matching keywords found in: {prompt}",
+            "confidence": 0.5,
+            "reasoning": f"Default routing: no specific keywords matched, using ai-connect as fallback",
             "needs_decomposition": False,
         }
 
