@@ -21,13 +21,14 @@ import argparse
 from sqlalchemy import inspect
 
 from ai_platform.database import engine, Base
-from ai_platform.models.db import (
+from ai_platform.models.db import (  # noqa: F401
     Tenant,
     User,
     Task,
     UsageEvent,
     AgentMemory,
-    Session,
+    ConversationSession,
+    ChannelMapping,
     Message,
 )
 
@@ -41,7 +42,7 @@ def create_tables():
     # Listar tablas creadas
     inspector = inspect(engine)
     tables = inspector.get_table_names()
-    print(f"\nTablas en la base de datos:")
+    print("\nTablas en la base de datos:")
     for table in sorted(tables):
         print(f"  - {table}")
 

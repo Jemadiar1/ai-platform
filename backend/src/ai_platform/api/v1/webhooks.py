@@ -623,8 +623,50 @@ async def _process_channel_message(
 
     logger = logging.getLogger(__name__)
 
-    tenant_id = str(mapping.tenant_id)
-    user_id_platform = str(mapping.user_id)
+    # Resolver tenant_id: si es None, crear/obtener tenant por defecto para canales
+    if mapping.tenant_id is None:
+        from uuid import uuid4
+
+        default_tenant_slug = "telegram-default"
+        with make_session() as db:
+            default_tenant = db.execute(
+                text("""
+                    SELECT id FROM tenants WHERE slug = :slug LIMIT 1
+                """),
+                {"slug": default_tenant_slug},
+            ).first()
+
+            if not default_tenant:
+                default_tenant_id = uuid4()
+                db.execute(
+                    text("""
+                        INSERT INTO tenants (id, name, slug, plan, is_active, created_at)
+                        VALUES (:id, 'NeuralCrew Labs', :slug, 'starter', true, NOW())
+                    """),
+                    {"id": default_tenant_id, "slug": default_tenant_slug},
+                )
+                db.commit()
+                logger.info(f"Tenant por defecto creado: {default_tenant_id}")
+                tenant_id = str(default_tenant_id)
+            else:
+                tenant_id = str(default_tenant.id)
+
+            # Actualizar el mapping con el tenant_id resuelto
+            db.execute(
+                text("""
+                    UPDATE channel_mappings
+                    SET tenant_id = :tenant_id
+                    WHERE id = :mapping_id
+                """),
+                {"tenant_id": default_tenant_id if not default_tenant else default_tenant.id, "mapping_id": mapping.id},
+            )
+            db.commit()
+            # Recargar mapping con el tenant_id actualizado
+            mapping = get_channel_user_info(channel=channel, channel_user_id=user_id)
+    else:
+        tenant_id = str(mapping.tenant_id)
+
+    user_id_platform = str(mapping.user_id) if mapping.user_id else None
 
     # Paso 2: Llamar a Odin para routing
     try:
@@ -754,8 +796,6 @@ async def _execute_module(
         "ai-web": "ai_platform.modules.ai_web.handler",
     }
 
-    import asyncio
-    import importlib
     import os
     import sys
 
@@ -768,21 +808,42 @@ async def _execute_module(
         }
 
     try:
-        # Agregar backend/src al sys.path para imports dinámicos
-
         src_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
         if src_path not in sys.path:
             sys.path.insert(0, src_path)
 
         handler_module = importlib.import_module(handler_module_path)
-        execute_func = getattr(handler_module, "execute", None) or getattr(handler_module, "execute_async", None)
 
+        # Preferir instanciar Handler().execute(payload) sobre función global execute
+        HandlerClass = getattr(handler_module, "Handler", None)
+        if HandlerClass is not None:
+            handler_instance = HandlerClass()
+            execute_result = handler_instance.execute(
+                {
+                    "module": module_name,
+                    "action": action,
+                    "params": {**params, "chat_id": chat_id, "channel": channel},
+                    "metadata": {
+                        "tenant_id": tenant_id,
+                        "user_id": user_id,
+                        "chat_id": chat_id,
+                        "channel": channel,
+                        "message_text": message_text,
+                    },
+                }
+            )
+            return execute_result
+
+        # Fallback: buscar función global execute / execute_async
+        execute_func = getattr(handler_module, "execute", None) or getattr(handler_module, "execute_async", None)
         if execute_func is None:
             return {
                 "module": module_name,
                 "status": "failed",
-                "error": f"Handler {module_name} no tiene función execute",
+                "error": f"Handler {module_name} no tiene clase Handler ni función execute",
             }
+
+        import asyncio
 
         payload = {
             "module": module_name,

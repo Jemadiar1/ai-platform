@@ -194,6 +194,34 @@ class ConversationSession(Base):
         return f"<ConversationSession(id={self.id}, title={self.title}, msgs={self.message_count})>"
 
 
+class ChannelMapping(Base):
+    """
+    Tabla: channel_mappings
+
+    Mapeo entre canales externos (Telegram, Discord, WhatsApp) y usuarios de la plataforma.
+    Permite vincular un usuario de canal externo con un tenant y usuario de la plataforma.
+    """
+
+    __tablename__ = "channel_mappings"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id = Column(PG_UUID(as_uuid=True), nullable=True, index=True)
+    user_id = Column(PG_UUID(as_uuid=True), nullable=True)
+    channel = Column(String(50), nullable=False)
+    channel_user_id = Column(String(255), nullable=False)
+    channel_username = Column(String(255), nullable=True)
+    channel_chat_id = Column(String(255), nullable=True)
+    channel_type = Column(String(50), nullable=True)
+    config = Column(JSON, default=dict)
+    is_active = Column(Boolean, default=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    def __repr__(self):
+        return f"<ChannelMapping(channel={self.channel}, channel_user_id={self.channel_user_id})>"
+
+
 class Message(Base):
     """
     Tabla: messages
