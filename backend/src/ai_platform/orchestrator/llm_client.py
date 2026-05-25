@@ -663,15 +663,11 @@ class LLMClient:
                 },
                 timeout=60,
             ) as client:
-                # First try: messages format
                 response = client.post(
                     "/chat/completions",
                     json={
                         "model": model,
-                        "messages": [
-                            {"role": "system", "content": system_instruction},
-                            {"role": "user", "content": prompt},
-                        ],
+                        "prompt": f"{system_instruction}\n\nUser: {prompt}\n\nAssistant:",
                         "max_tokens": 1024,
                         "temperature": 0.7,
                     },
@@ -679,32 +675,14 @@ class LLMClient:
 
                 if response.status_code == 200:
                     data = response.json()
-                    content = data["choices"][0]["message"]["content"]
-                    # Check if response is just the system prompt (indicates NAN ignores user message)
+                    if "choices" in data and len(data["choices"]) > 0:
+                        content = data["choices"][0].get("message", {}).get("content", "")
+                        if not content:
+                            content = data["choices"][0].get("text", "")
+                    else:
+                        content = data.get("content", "")
                     if content and content.strip():
-                        system_prefix = system_instruction[:80].lower()
-                        response_prefix = content.strip()[:80].lower()
-                        if response_prefix == system_prefix:
-                            logger.warning(f"NAN returned system prompt as response, falling back to user-only")
-                            # Fallback: try without system role, embed system in user message
-                            response2 = client.post(
-                                "/chat/completions",
-                                json={
-                                    "model": model,
-                                    "messages": [
-                                        {"role": "user", "content": f"{system_instruction}\n\n{prompt}"},
-                                    ],
-                                    "max_tokens": 1024,
-                                    "temperature": 0.7,
-                                },
-                            )
-                            if response2.status_code == 200:
-                                data2 = response2.json()
-                                content2 = data2["choices"][0]["message"]["content"]
-                                return {"content": content2, "model": model}
-                            logger.warning(f"Fallback also failed: {response2.status_code}")
-                        else:
-                            return {"content": content, "model": model}
+                        return {"content": content.strip(), "model": model}
 
                 logger.warning(f"Chat LLM failed with status {response.status_code}: {response.text[:200]}")
                 return {
