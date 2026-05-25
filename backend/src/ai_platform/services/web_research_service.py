@@ -365,6 +365,12 @@ class WebResearchService:
         # 5. Extraer contenido
         title, markdown_content = self._extract_markdown(result.content, result.content_type)
 
+        # 5b. Enforce max_content_size on processed content
+        if len(markdown_content) > self.max_content_size:
+            raise ValueError(
+                f"Contenido demasiado grande después de procesar: {len(markdown_content)} bytes (máx: {self.max_content_size})"
+            )
+
         # 6. Construir resultado
         content_hash = hashlib.sha256(markdown_content.encode()).hexdigest()
         fetch_result = FetchResult(
@@ -414,20 +420,29 @@ class WebResearchService:
         search_url = f"https://html.duckduckgo.com/html/?q={query}"
         results = []
 
-        for _ in range(max_results):
+        resp = await self._safe_http_get(search_url)
+        soup = BeautifulSoup(resp.content, "html.parser")
+        result_urls = []
+        for row in soup.select("result"):
+            link_el = row.select_one("a.result-a")
+            if link_el and link_el.get("href"):
+                link = link_el["href"]
+                result_urls.append(link)
+            if len(result_urls) >= max_results:
+                break
+
+        for url in result_urls[:max_results]:
             try:
                 result = await self.fetch_url(
-                    url=search_url,
+                    url=url,
                     tenant_id=tenant_id,
                     source_by=source_by,
                     task_id=task_id,
                     force_refresh=True,
                 )
                 results.append(result)
-                break
             except Exception as e:
-                logger.warning("Search fetch failed", error=str(e))
-                break
+                logger.warning("Search result fetch failed", url=url, error=str(e))
 
         return results
 
@@ -470,48 +485,63 @@ class WebResearchService:
 
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
-                context = browser.new_context(
-                    viewport={"width": 1280, "height": 720},
-                    user_agent=("Mozilla/5.0 (compatible; NeuralCrewBot/1.0; +https://neurialcrew.com/bot)"),
-                    ignore_https_errors=False,
-                )
+                try:
+                    context = browser.new_context(
+                        viewport={"width": 1280, "height": 720},
+                        user_agent=("Mozilla/5.0 (compatible; NeuralCrewBot/1.0; +https://neurialcrew.com/bot)"),
+                        ignore_https_errors=False,
+                    )
 
-                page = context.new_page()
-                page.set_default_timeout(timeout_ms or self.browser_timeout)
+                    page = context.new_page()
+                    page.set_default_timeout(timeout_ms or self.browser_timeout)
 
-                response = page.goto(url, wait_until="domcontentloaded")
+                    response = page.goto(url, wait_until="domcontentloaded")
 
-                if wait_for_selector:
-                    try:
-                        page.wait_for_selector(wait_for_selector, timeout=10_000)
-                    except Exception:
-                        logger.warning("Selector timeout", selector=wait_for_selector, url=url)
+                    if wait_for_selector:
+                        try:
+                            page.wait_for_selector(wait_for_selector, timeout=10_000)
+                        except Exception:
+                            logger.warning("Selector timeout", selector=wait_for_selector, url=url)
 
-                screenshot_b64 = None
-                if take_screenshot:
-                    screenshot_b64 = page.screenshot(type="jpeg", quality=60)
+                    screenshot_b64 = None
+                    if take_screenshot:
+                        screenshot_b64 = page.screenshot(type="jpeg", quality=60)
 
-                content = None
-                if extract_content:
-                    html = page.content()
-                    _, content = self._extract_markdown(html, "text/html")
+                    content = None
+                    if extract_content:
+                        html = page.content()
+                        _, content = self._extract_markdown(html, "text/html")
 
-                browser.close()
+                    return BrowserResult(
+                        url=url,
+                        screenshot_base64=screenshot_b64,
+                        page_title=page.title(),
+                        final_url=page.url,
+                        content=content,
+                        fetch_date=datetime.now(UTC),
+                        tenant_id=tenant_id,
+                        source_by=source_by,
+                        task_id=task_id,
+                    )
+                except Exception as e:
+                    logger.error("Browser session failed", url=url, error=str(e))
+                    return BrowserResult(
+                        url=url,
+                        screenshot_base64=None,
+                        page_title="",
+                        final_url=url,
+                        content=None,
+                        fetch_date=datetime.now(UTC),
+                        tenant_id=tenant_id,
+                        source_by=source_by,
+                        task_id=task_id,
+                        error=str(e),
+                    )
+                finally:
+                    browser.close()
 
-                return BrowserResult(
-                    url=url,
-                    screenshot_base64=screenshot_b64,
-                    page_title=page.title(),
-                    final_url=page.url,
-                    content=content,
-                    fetch_date=datetime.now(UTC),
-                    tenant_id=tenant_id,
-                    source_by=source_by,
-                    task_id=task_id,
-                )
-
-        except Exception as e:
-            logger.error("Browser session failed", url=url, error=str(e))
+        except ImportError:
+            logger.error("Playwright not installed", url=url)
             return BrowserResult(
                 url=url,
                 screenshot_base64=None,
@@ -522,7 +552,7 @@ class WebResearchService:
                 tenant_id=tenant_id,
                 source_by=source_by,
                 task_id=task_id,
-                error=str(e),
+                error="Playwright no está instalado",
             )
 
     # =========================================================================
@@ -644,7 +674,7 @@ class WebResearchService:
                 extra_data={
                     "url": result.url,
                     "content_size": result.size_bytes,
-                    "cached": False,
+                    "cached": result.cached,
                     "status_code": result.status_code,
                 },
             )
