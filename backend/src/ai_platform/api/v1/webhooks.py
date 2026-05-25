@@ -627,6 +627,23 @@ async def _process_channel_message(
     if mapping.tenant_id is None:
         from uuid import uuid4
 
+        from ai_platform.database import Base, engine
+        from ai_platform.models.db import (
+            AgentMemory,
+            ChannelMapping,
+            Contact,
+            ConversationSession,
+            Message,
+            Task,
+            Tenant,
+            TenantSkill,
+            UsageEvent,
+            User,
+        )
+
+        # Asegurar que todas las tablas existen (puede que no se hayan creado en VPS)
+        Base.metadata.create_all(engine)
+
         default_tenant_slug = "telegram-default"
         with make_session() as db:
             default_tenant = db.execute(
@@ -658,7 +675,7 @@ async def _process_channel_message(
                     SET tenant_id = :tenant_id
                     WHERE id = :mapping_id
                 """),
-                {"tenant_id": default_tenant_id if not default_tenant else default_tenant.id, "mapping_id": mapping.id},
+                {"tenant_id": default_tenant.id if default_tenant else default_tenant_id, "mapping_id": mapping.id},
             )
             db.commit()
             # Recargar mapping con el tenant_id actualizado

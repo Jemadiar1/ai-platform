@@ -248,3 +248,55 @@ class Message(Base):
 
     def __repr__(self):
         return f"<Message(role={self.role}, session={self.session_id})>"
+
+
+class TenantSkill(Base):
+    """
+    Tabla: tenant_skills
+
+    Skills personalizados por tenant.
+    """
+
+    __tablename__ = "tenant_skills"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id = Column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    name = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    category = Column(String(50), default="custom")
+    version = Column(String(20), default="1.0.0")
+    content = Column(Text, nullable=True)
+    enabled = Column(Boolean, default=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    def __repr__(self):
+        return f"<TenantSkill(name={self.name}, tenant_id={self.tenant_id})>"
+
+
+class Contact(Base):
+    """
+    Tabla: contacts
+
+    Contactos CRM de cada tenant.
+    """
+
+    __tablename__ = "contacts"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id = Column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    name = Column(String(255), nullable=True)
+    email = Column(String(255), nullable=True)
+    phone = Column(String(50), nullable=True)
+    channel_id = Column(String(255), nullable=True)
+    channel_type = Column(String(50), nullable=True)
+    tags = Column(JSON, default=list)
+    notes = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    def __repr__(self):
+        return f"<Contact(name={self.name}, tenant_id={self.tenant_id})>"
