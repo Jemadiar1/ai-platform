@@ -817,6 +817,7 @@ async def _execute_module(
         "ai-web": "ai_platform.modules.ai_web.handler",
     }
 
+    import importlib
     import os
     import sys
 
