@@ -14,7 +14,7 @@ Estructura de tablas:
 
 from uuid import uuid4
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, Float, Integer, LargeBinary, String, Text, func
+from sqlalchemy import JSON, Boolean, Column, DateTime, Float, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from ai_platform.database import Base
