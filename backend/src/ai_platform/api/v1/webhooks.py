@@ -730,8 +730,10 @@ async def _process_channel_message(
 
     # Paso 5: Enviar respuesta de vuelta al canal
     response_text = _extract_response_text(module_result)
-    logger.info(f"Module result: {module_result}")
-    logger.info(f"Extracted response: {response_text[:200]}")
+    print(f"[DEBUG] module_result type: {type(module_result)}", flush=True)
+    print(f"[DEBUG] module_result keys: {list(module_result.keys()) if isinstance(module_result, dict) else 'N/A'}", flush=True)
+    print(f"[DEBUG] module_result content: {module_result}", flush=True)
+    print(f"[DEBUG] response_text: {response_text[:200]}", flush=True)
     if response_text:
         await _send_to_channel(channel, chat_id, response_text)
 
@@ -851,6 +853,7 @@ async def _execute_module(
                     },
                 }
             )
+            print(f"[DEBUG _execute_module] Handler result: {execute_result}", flush=True)
             return execute_result
 
         # Fallback: buscar función global execute / execute_async
