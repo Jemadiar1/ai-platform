@@ -204,7 +204,7 @@ def get_report(
 @router.get("/{report_id}/download/{format}")
 def download_report(
     report_id: UUID,
-    format: str = Query(..., description="Formato: html, pdf, docx, xlsx, csv"),
+    format: str,
     tenant_id: str = Query(..., description="ID del tenant"),
     db: Session = Depends(get_db_session),
 ):

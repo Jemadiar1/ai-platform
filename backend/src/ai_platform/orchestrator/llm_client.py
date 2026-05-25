@@ -407,14 +407,20 @@ class LLMClient:
             "- ai-social: Gestión de redes sociales (Instagram, Facebook, LinkedIn)\n"
             "- ai-leads: Generación y gestión de leads\n"
             "- ai-ads: Campañas publicitarias (Meta Ads, Google Ads)\n"
-            "- ai-analytics: Análisis de datos y métricas\n"
+            "- ai-analytics: Análisis de datos, métricas, reportes, investigación web, OCR y renderizado\n"
             "- ai-web: Generación de páginas web y landing pages\n\n"
+            "Capacidades internas de ai-analytics:\n"
+            "- web_research: Investigar fuentes web, fetch de URLs, navegación headless\n"
+            "- document_ingestion: Procesar documentos (PDF, DOCX, imágenes) con chunking y FTS\n"
+            "- vision_ocr: Extraer texto de imágenes/escaneos con OCR (Tesseract), detectar gráficos\n"
+            "- report_renderer: Generar reportes en PDF, DOCX, XLSX, CSV con gráficos\n\n"
             "Principios de decisión:\n"
             "1. Siempre selecciona UN SOLO módulo principal\n"
             "2. Si el usuario pide múltiples módulos, selecciona el principal y\n"
             "   marca 'needs_decomposition': true\n"
             "3. Piensa en el INTENT del usuario, no solo las palabras clave\n"
-            "4. Si una tarea no encaja en ningún módulo, responde 'uncategorized'\n\n"
+            "4. Si una tarea no encaja en ningún módulo, responde 'uncategorized'\n"
+            "5. Investigación web, OCR, procesamiento de documentos y reportes van a ai-analytics\n\n"
             "Debes responder SIEMPRE en este formato JSON:\n"
             "{\n"
             '  "module": "ai-connect" | "ai-content" | "ai-ads" | "ai-analytics" | "ai-leads" | "ai-social" | "ai-web" | "uncategorized",\n'
@@ -485,6 +491,7 @@ class LLMClient:
             "Tu trabajo es descomponer tareas complejas en pasos simples.\n\n"
             "Cada paso debe ser un módulo específico con su acción.\n"
             "Módulos: ai-connect, ai-content, ai-social, ai-leads, ai-ads, ai-analytics, ai-web\n\n"
+            "ai-analytics incluye: web_research, document_ingestion, vision_ocr, report_renderer\n\n"
             "Responde SIEMPRE en este formato JSON:\n"
             "{\n"
             '  "steps": [\n'
@@ -610,6 +617,53 @@ class LLMClient:
                 "params": {},
                 "confidence": 0.7,
                 "reasoning": "Rule-based: detected content generation keywords",
+                "needs_decomposition": False,
+            }
+        elif any(
+            word in prompt_lower
+            for word in ["research", "investigar", "web search", "buscar web", "fetch url", "scrape"]
+        ):
+            return {
+                "module": "ai-analytics",
+                "action": "web_research",
+                "params": {},
+                "confidence": 0.7,
+                "reasoning": "Rule-based: detected web research keywords",
+                "needs_decomposition": False,
+            }
+        elif any(
+            word in prompt_lower
+            for word in ["document", "upload", "subir", "pdf", "docx", "chunk", "index", "fts", "search doc"]
+        ):
+            return {
+                "module": "ai-analytics",
+                "action": "document_ingest",
+                "params": {},
+                "confidence": 0.7,
+                "reasoning": "Rule-based: detected document ingestion keywords",
+                "needs_decomposition": False,
+            }
+        elif any(
+            word in prompt_lower for word in ["ocr", "scan", "escanear", "extract text image", "chart detect", "graph"]
+        ):
+            return {
+                "module": "ai-analytics",
+                "action": "ocr_extract",
+                "params": {},
+                "confidence": 0.7,
+                "reasoning": "Rule-based: detected OCR/visual analysis keywords",
+                "needs_decomposition": False,
+            }
+        elif any(
+            word in prompt_lower
+            for word in ["report", "render", "generate report", "export report", "pdf report", "xlsx", "spreadsheet"]
+        ):
+            return {
+                "module": "ai-analytics",
+                "action": "render_report",
+                "params": {},
+                "confidence": 0.7,
+                "reasoning": "Rule-based: detected report rendering keywords",
                 "needs_decomposition": False,
             }
 
