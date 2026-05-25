@@ -24,7 +24,6 @@ from typing import Any
 import httpx
 
 from ai_platform.core.config import get_settings
-from ai_platform.orchestrator.mcp import get_mcp_client
 from ai_platform.orchestrator.pricing import calculate_cost
 from ai_platform.orchestrator.rate_limiter import get_rate_limit_tracker
 
@@ -426,15 +425,6 @@ class LLMClient:
             "}\n\n"
         )
 
-        # Incluir herramientas MCP en el prompt
-        try:
-            mcp_client = get_mcp_client()
-            tool_schemas = mcp_client.get_tool_schemas()
-            if tool_schemas:
-                base += "\n".join(tool_schemas) + "\n"
-        except Exception as e:
-            logger.warning(f"Failed to include MCP tools in routing prompt: {e}")
-
         if history:
             context = "Contexto de conversación relevante:\n"
             for msg in history[-5:]:  # Últimos 5 mensajes para contexto
@@ -628,7 +618,7 @@ class LLMClient:
             "action": "send_message",
             "params": {},
             "confidence": 0.5,
-            "reasoning": f"Default routing: no specific keywords matched, using ai-connect as fallback",
+            "reasoning": "Default routing: no specific keywords matched, using ai-connect as fallback",
             "needs_decomposition": False,
         }
 
@@ -663,7 +653,10 @@ class LLMClient:
                     json={
                         "model": model,
                         "messages": [
-                            {"role": "user", "content": f"Eres un asistente de marketing digital de NeuralCrew Labs, una agencia 100% potenciada por IA. Responde de forma útil, concisa y profesional en español. Usuario: {prompt}"},
+                            {
+                                "role": "user",
+                                "content": f"Eres un asistente de marketing digital de NeuralCrew Labs, una agencia 100% potenciada por IA. Responde de forma útil, concisa y profesional en español. Usuario: {prompt}",
+                            },
                         ],
                         "max_tokens": 1024,
                         "temperature": 0.7,

@@ -421,36 +421,34 @@ class Odin:
         """
         Invocar al handler del módulo seleccionado.
 
-        NOTA: Este método es un placeholder en la fase actual.
-        Siempre retorna éxito sin ejecutar el handler real del módulo.
-        La implementación completa requiere:
-        1. Importación dinámica del handler desde ai_platform.modules.{module}.handler
-        2. Validación de payload contra el schema del módulo
-        3. Ejecución asíncrona del handler
-        4. Manejo de errores y timeouts
-        5. Registro de observabilidad
-
-        Brecha documentada: Odin.execute() no ejecuta handlers reales.
-        Los módulos de negocio están implementados pero no son invocados
-        por el orquestador en esta fase.
+        Importa dinámicamente la clase Handler del módulo y ejecuta
+        execute(payload). Sigue el mismo patrón usado por webhooks,
+        channels y task_runner para consistencia.
 
         Parámetros:
             module: Nombre del módulo (ej: "ai-connect")
             payload: Payload enriquecido con contexto
 
         Retorna:
-            Dict con resultado (placeholder: siempre "completed")
+            Dict con resultado del handler
         """
-        # TODO: Importación dinámica del handler
-        # from ai_platform.modules.ai_connect.handler import execute
-        # result = await execute(payload)
+        from ai_platform.orchestrator.modules import get_handler
 
-        return {
-            "module": module,
-            "status": "completed",
-            "message": f"Module {module} executed successfully.",
-            "payload": payload,
-        }
+        HandlerClass = get_handler(module)
+        if HandlerClass is None:
+            return {
+                "module": module,
+                "status": "error",
+                "error": f"Handler no encontrado para módulo: {module}",
+            }
+
+        try:
+            handler_instance = HandlerClass()
+            result = handler_instance.execute(payload)
+            return result if isinstance(result, dict) else {"status": "ok", "data": result}
+        except Exception as e:
+            logger.error(f"Module execution failed: {module} -> {e}")
+            raise
 
 
 # Instancia global

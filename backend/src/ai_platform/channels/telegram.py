@@ -44,11 +44,7 @@ class TelegramChannel(BaseChannel):
     ):
         self.settings = get_settings()
         self.token = token if token is not None else self.settings.TELEGRAM_BOT_TOKEN
-        self.webhook_secret = (
-            webhook_secret
-            if webhook_secret is not None
-            else self.settings.TELEGRAM_WEBHOOK_SECRET
-        )
+        self.webhook_secret = webhook_secret if webhook_secret is not None else self.settings.TELEGRAM_WEBHOOK_SECRET
         self.base_url = f"https://api.telegram.org/bot{self.token}" if self.token else ""
 
     async def validate_webhook(self, payload: Any, headers: dict | None = None) -> dict:

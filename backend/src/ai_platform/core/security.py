@@ -11,11 +11,7 @@ import logging
 import re
 import time
 from collections import OrderedDict
-from datetime import UTC, datetime, timedelta
-from typing import ClassVar
-from urllib.parse import urlparse
 
-import bcrypt as _bcrypt
 from jose import JWTError, jwt
 
 from ai_platform.core.config import get_settings

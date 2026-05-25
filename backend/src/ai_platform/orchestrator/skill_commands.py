@@ -406,10 +406,10 @@ class SkillCommandManager:
 
     async def _cmd_skills(self, params: dict[str, Any], tenant_id: str, session_id: str) -> dict[str, Any]:
         """
-        Muestra las skills disponibles.
+        Muestra las capacidades disponibles (módulos).
 
-        Lista todos los módulos que Odin puede usar:
-        ai-connect, ai-content, ai-social, etc.
+        Lista todos los módulos que Odin puede usar,
+        leídos desde el ModuleRegistry centralizado.
 
         Parámetros:
             params: Parámetros adicionales (no usados)
@@ -417,22 +417,16 @@ class SkillCommandManager:
             session_id: ID de la sesión
 
         Retorna:
-            Dict con lista de skills
+            Dict con lista de módulos
         """
-        skills_info = {
-            "ai-connect": "Mensajería (WhatsApp, Telegram, Slack, Messenger)",
-            "ai-content": "Generación de contenido (textos, posts, blogs)",
-            "ai-social": "Gestión de redes sociales (Instagram, Facebook, LinkedIn, TikTok)",
-            "ai-leads": "Generación y gestión de leads",
-            "ai-ads": "Campañas publicitarias (Meta Ads, Google Ads)",
-            "ai-analytics": "Análisis de datos y métricas",
-            "ai-web": "Generación de páginas web y landing pages",
-        }
+        from ai_platform.orchestrator.modules import get_all_modules
 
-        response = "Skills disponibles:\n\n"
-        for module, description in skills_info.items():
-            response += f"  • {module}: {description}\n"
-        response += "\nOdin selecciona automáticamente el skill más apropiado."
+        modules = get_all_modules()
+
+        response = "Capacidades disponibles:\n\n"
+        for module in modules:
+            response += f"  • {module.name}: {module.description}\n"
+        response += "\nOdin selecciona automáticamente el módulo más apropiado."
         return {"response": response}
 
     async def _cmd_model(self, params: dict[str, Any], tenant_id: str, session_id: str) -> dict[str, Any]:

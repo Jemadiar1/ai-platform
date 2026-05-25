@@ -211,27 +211,14 @@ def process_task(self, task_id: str, module: str, payload: dict) -> dict:
         save_task_update(task_id, {"status": "running", "started_at": datetime.now(UTC)})
 
         # Paso 2: Importar el handler del módulo correcto
-        # Los módulos de IA están en ai_platform.modules.<module>.handler
-        # Esto carga dinámicamente solo el módulo que necesitamos
-        module_handlers = {
-            "ai-connect": "ai_platform.modules.ai_connect.handler",
-            "ai-content": "ai_platform.modules.ai_content.handler",
-            "ai-social": "ai_platform.modules.ai_social.handler",
-            "ai-leads": "ai_platform.modules.ai_leads.handler",
-            "ai-ads": "ai_platform.modules.ai_ads.handler",
-            "ai-analytics": "ai_platform.modules.ai_analytics.handler",
-            "ai-web": "ai_platform.modules.ai_web.handler",
-        }
+        from ai_platform.orchestrator.modules import get_handler, get_module_names
 
-        if module not in module_handlers:
-            raise ValueError(f"Módulo no soportado: {module}. Módulos válidos: {list(module_handlers.keys())}")
+        if module not in get_module_names():
+            raise ValueError(f"Módulo no soportado: {module}. Módulos válidos: {get_module_names()}")
 
         # Cargar el handler dinámicamente
-        handler_path = module_handlers[module]
-        import importlib
-
-        handler_module = importlib.import_module(handler_path)
-        handler = handler_module.Handler()
+        HandlerClass = get_handler(module)
+        handler = HandlerClass()
 
         # Paso 3: Ejecutar la lógica del módulo
         logger.info("executing_module", task_id=task_id, module=module, action=payload.get("action", "unknown"))

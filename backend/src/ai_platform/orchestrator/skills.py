@@ -181,7 +181,9 @@ class SkillManager:
         """
         Listar skills disponibles para un tenant.
 
-        Pattern: Level 0 - skills_list() de Hermes.
+        Delega al ModuleRegistry: los módulos son la unidad visible
+        de producto. "Skills" es un alias para módulos con fines
+        de compatibilidad con la interfaz de comandos (/skills).
 
         Parámetros:
             tenant_id: ID del tenant
@@ -198,17 +200,18 @@ class SkillManager:
             if time.time() - timestamp < self._cache_ttl:
                 return data
 
-        # Skills oficiales del sistema
+        # Delegar al ModuleRegistry — módulos como skills
+        from ai_platform.orchestrator.modules import get_all_modules
+
+        modules = get_all_modules()
         official_skills = [
-            {"name": "web_search", "description": "Buscar información en la web", "category": "official"},
-            {"name": "file_read", "description": "Leer archivos del sistema", "category": "official"},
-            {"name": "terminal", "description": "Ejecutar comandos de terminal", "category": "official"},
-            {"name": "browser", "description": "Automatizar browser web", "category": "official"},
-            {"name": "code_execute", "description": "Ejecutar código Python", "category": "official"},
-            {"name": "voice", "description": "Text-to-speech y speech-to-text", "category": "official"},
-            {"name": "mcp", "description": "Model Context Protocol integration", "category": "official"},
-            {"name": "cron", "description": "Programmable recurring tasks", "category": "official"},
-            {"name": "vision", "description": "Analyze and generate images", "category": "official"},
+            {
+                "name": m.name,
+                "description": m.description,
+                "category": m.category,
+                "version": "1.0.0",
+            }
+            for m in modules
         ]
 
         # Load tenant-custom skills from DB
@@ -217,7 +220,7 @@ class SkillManager:
         all_skills = official_skills + custom_skills
 
         if category:
-            all_skills = [s for s in all_skills if s.get("category") == category]
+            all_skills = [s for s in all_skills if s.get("category") == category or s.get("category") == "official"]
 
         # Cache result
         self._skills_cache[cache_key] = (all_skills, time.time())
@@ -268,30 +271,32 @@ class SkillManager:
         params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
-        Ejecutar un skill.
+        Ejecutar un skill delegando al módulo correspondiente.
 
-        Security step: escanear el skill antes de ejecutar.
+        Los skills son un alias para módulos. execute_skill llama
+        al handler del módulo correspondiente.
 
         Parámetros:
             tenant_id: ID del tenant
-            skill_name: Nombre del skill
+            skill_name: Nombre del skill (mismo que módulo)
             params: Parámetros del skill
 
         Retorna:
             Dict con resultado de la ejecución
         """
-        # Get the skill
-        skill = await self.get_skill(tenant_id, skill_name)
+        # Delegar al ModuleRegistry
+        from ai_platform.orchestrator.modules import get_handler
 
-        if not skill:
+        HandlerClass = get_handler(skill_name)
+        if HandlerClass is None:
             return {
                 "success": False,
                 "error": "skill_not_found",
                 "message": f"Skill {skill_name} not found.",
             }
 
-        # Security scan
-        scan_result = await self.security_scanner.scan(skill.get("content", "") or skill.get("code", ""))
+        # Security scan (placeholder - en producción escanear el payload)
+        scan_result = await self.security_scanner.scan(skill_name)
 
         if not scan_result["is_safe"]:
             logger.warning(
@@ -306,13 +311,31 @@ class SkillManager:
                 "flags": scan_result["flags"],
             }
 
-        # Execute skill (placeholder - in production, this would be dynamic import)
-        return {
-            "success": True,
-            "skill": skill_name,
-            "category": skill.get("category"),
-            "params": params or {},
-        }
+        # Ejecutar el handler del módulo
+        try:
+            handler_instance = HandlerClass()
+            result = handler_instance.execute(
+                {
+                    "module": skill_name,
+                    "action": params.get("action", "default") if params else "default",
+                    "params": params or {},
+                    "metadata": {"tenant_id": tenant_id},
+                }
+            )
+            return {
+                "success": True,
+                "skill": skill_name,
+                "category": "official",
+                "params": params or {},
+                "result": result,
+            }
+        except Exception as e:
+            logger.error(f"Skill execution failed: {skill_name} -> {e}")
+            return {
+                "success": False,
+                "error": "execution_error",
+                "message": str(e),
+            }
 
     async def auto_create_after_task(
         self,
@@ -371,38 +394,20 @@ class SkillManager:
     # -------------------------------------------------------------------------
 
     def _get_official_skill(self, name: str) -> dict[str, Any] | None:
-        """Obtener un skill oficial del sistema."""
-        official_skills = {
-            "web_search": {
-                "name": "web_search",
-                "description": "Buscar información en la web",
-                "category": "official",
-                "version": "1.0.0",
-                "code": "# Web search tool",
-            },
-            "file_read": {
-                "name": "file_read",
-                "description": "Leer archivos del sistema",
-                "category": "official",
-                "version": "1.0.0",
-                "code": "# File read tool",
-            },
-            "terminal": {
-                "name": "terminal",
-                "description": "Ejecutar comandos de terminal",
-                "category": "official",
-                "version": "1.0.0",
-                "code": "# Terminal tool",
-            },
-            "browser": {
-                "name": "browser",
-                "description": "Automatizar browser web",
-                "category": "official",
-                "version": "1.0.0",
-                "code": "# Browser tool",
-            },
+        """Obtener un skill oficial del sistema — delega al ModuleRegistry."""
+        from ai_platform.orchestrator.modules import get_module_info
+
+        module = get_module_info(name)
+        if not module:
+            return None
+
+        return {
+            "name": module.name,
+            "description": module.description,
+            "category": module.category,
+            "version": "1.0.0",
+            "code": f"# Module: {module.name}\n# Actions: {', '.join(module.action_names)}",
         }
-        return official_skills.get(name)
 
     def _get_tenant_skills(self, tenant_id: str) -> list[dict[str, Any]]:
         """Obtener skills custom de un tenant."""

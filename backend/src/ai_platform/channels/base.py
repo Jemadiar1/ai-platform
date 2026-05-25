@@ -287,18 +287,10 @@ class BaseChannel:
         module = decision["module"]
         params = decision["params"]
 
-        module_handlers = {
-            "ai-connect": "ai_platform.modules.ai_connect.handler",
-            "ai-content": "ai_platform.modules.ai_content.handler",
-            "ai-social": "ai_platform.modules.ai_social.handler",
-            "ai-leads": "ai_platform.modules.ai_leads.handler",
-            "ai-ads": "ai_platform.modules.ai_ads.handler",
-            "ai-analytics": "ai_platform.modules.ai_analytics.handler",
-            "ai-web": "ai_platform.modules.ai_web.handler",
-        }
+        from ai_platform.orchestrator.modules import get_handler
 
-        handler_path = module_handlers.get(module)
-        if not handler_path:
+        HandlerClass = get_handler(module)
+        if HandlerClass is None:
             return {
                 "module": module,
                 "status": "error",
@@ -306,15 +298,7 @@ class BaseChannel:
             }
 
         try:
-            import importlib
-
-            handler_module = importlib.import_module(handler_path)
-            handler_class = getattr(handler_module, "Handler", None)
-
-            if handler_class is None:
-                raise AttributeError(f"No se encontró Handler en {handler_path}")
-
-            handler_instance = handler_class()
+            handler_instance = HandlerClass()
             result = handler_instance.execute({**params, "tenant_id": tenant_id})
 
             return result

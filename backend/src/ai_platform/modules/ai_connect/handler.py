@@ -123,7 +123,7 @@ class Handler:
             logger.error(f"Error generando respuesta IA: {e}")
             return {
                 "status": "error",
-                "response": f"Lo siento, estoy teniendo problemas para generar una respuesta. Intenta de nuevo.",
+                "response": "Lo siento, estoy teniendo problemas para generar una respuesta. Intenta de nuevo.",
             }
 
     # ========================================================================

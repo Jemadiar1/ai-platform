@@ -628,18 +628,6 @@ async def _process_channel_message(
         from uuid import uuid4
 
         from ai_platform.database import Base, engine
-        from ai_platform.models.db import (
-            AgentMemory,
-            ChannelMapping,
-            Contact,
-            ConversationSession,
-            Message,
-            Task,
-            Tenant,
-            TenantSkill,
-            UsageEvent,
-            User,
-        )
 
         # Asegurar que todas las tablas existen (puede que no se hayan creado en VPS)
         Base.metadata.create_all(engine)
@@ -731,7 +719,10 @@ async def _process_channel_message(
     # Paso 5: Enviar respuesta de vuelta al canal
     response_text = _extract_response_text(module_result)
     print(f"[DEBUG] module_result type: {type(module_result)}", flush=True)
-    print(f"[DEBUG] module_result keys: {list(module_result.keys()) if isinstance(module_result, dict) else 'N/A'}", flush=True)
+    print(
+        f"[DEBUG] module_result keys: {list(module_result.keys()) if isinstance(module_result, dict) else 'N/A'}",
+        flush=True,
+    )
     print(f"[DEBUG] module_result content: {module_result}", flush=True)
     print(f"[DEBUG] response_text: {response_text[:200]}", flush=True)
     if response_text:
@@ -815,22 +806,10 @@ async def _execute_module(
     message_text: str,
 ) -> dict[str, Any]:
     """Ejecutar el módulo seleccionado dinámicamente."""
-    module_handlers: dict[str, str] = {
-        "ai-connect": "ai_platform.modules.ai_connect.handler",
-        "ai-content": "ai_platform.modules.ai_content.handler",
-        "ai-social": "ai_platform.modules.ai_social.handler",
-        "ai-leads": "ai_platform.modules.ai_leads.handler",
-        "ai-ads": "ai_platform.modules.ai_ads.handler",
-        "ai-analytics": "ai_platform.modules.ai_analytics.handler",
-        "ai-web": "ai_platform.modules.ai_web.handler",
-    }
+    from ai_platform.orchestrator.modules import get_handler
 
-    import importlib
-    import os
-    import sys
-
-    handler_module_path = module_handlers.get(module_name)
-    if not handler_module_path:
+    HandlerClass = get_handler(module_name)
+    if HandlerClass is None:
         return {
             "module": module_name,
             "status": "failed",
@@ -838,61 +817,24 @@ async def _execute_module(
         }
 
     try:
-        src_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-        if src_path not in sys.path:
-            sys.path.insert(0, src_path)
-
-        handler_module = importlib.import_module(handler_module_path)
-
-        # Preferir instanciar Handler().execute(payload) sobre función global execute
-        HandlerClass = getattr(handler_module, "Handler", None)
-        if HandlerClass is not None:
-            handler_instance = HandlerClass()
-            execute_result = handler_instance.execute(
-                {
-                    "module": module_name,
-                    "action": action,
-                    "params": {**params, "chat_id": chat_id, "channel": channel},
-                    "metadata": {
-                        "tenant_id": tenant_id,
-                        "user_id": user_id,
-                        "chat_id": chat_id,
-                        "channel": channel,
-                        "message_text": message_text,
-                    },
-                }
-            )
-            print(f"[DEBUG _execute_module] Handler result: {execute_result}", flush=True)
-            return execute_result
-
-        # Fallback: buscar función global execute / execute_async
-        execute_func = getattr(handler_module, "execute", None) or getattr(handler_module, "execute_async", None)
-        if execute_func is None:
-            return {
+        handler_instance = HandlerClass()
+        execute_result = handler_instance.execute(
+            {
                 "module": module_name,
-                "status": "failed",
-                "error": f"Handler {module_name} no tiene clase Handler ni función execute",
+                "action": action,
+                "params": {**params, "chat_id": chat_id, "channel": channel},
+                "metadata": {
+                    "tenant_id": tenant_id,
+                    "user_id": user_id,
+                    "chat_id": chat_id,
+                    "channel": channel,
+                    "message_text": message_text,
+                },
             }
+        )
+        print(f"[DEBUG _execute_module] Handler result: {execute_result}", flush=True)
+        return execute_result
 
-        import asyncio
-
-        payload = {
-            "module": module_name,
-            "action": action,
-            "params": {**params, "chat_id": chat_id, "channel": channel},
-            "metadata": {
-                "tenant_id": tenant_id,
-                "user_id": user_id,
-                "chat_id": chat_id,
-                "channel": channel,
-                "message_text": message_text,
-            },
-        }
-
-        if asyncio.iscoroutinefunction(execute_func):
-            return await execute_func(payload)
-        else:
-            return execute_func(payload)
     except Exception as e:
         return {
             "module": module_name,
