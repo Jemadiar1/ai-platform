@@ -14,7 +14,7 @@ Estructura de tablas:
 
 from uuid import uuid4
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, Float, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, Column, DateTime, Float, Integer, LargeBinary, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from ai_platform.database import Base
@@ -331,3 +331,82 @@ class WebResearchResult(Base):
 
     def __repr__(self):
         return f"<WebResearchResult(url={self.url}, tenant={self.tenant_id})>"
+
+
+class DocumentArtifact(Base):
+    """
+    Tabla: document_artifacts
+
+    Documentos subidos para procesamiento asíncrono.
+    """
+
+    __tablename__ = "document_artifacts"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id = Column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    name = Column(String(500), nullable=False)
+    mime_type = Column(String(100), nullable=False)
+    size_bytes = Column(Integer, default=0)
+    file_path = Column(String(1000), nullable=False)
+    storage_backend = Column(String(50), default="local")
+    status = Column(String(30), default="pending", index=True)
+    error = Column(Text, nullable=True)
+    celery_task_id = Column(String(255), nullable=True)
+    page_count = Column(Integer, nullable=True)
+    language = Column(String(10), default="es")
+    checksum = Column(String(64), nullable=True)
+    created_by = Column(PG_UUID(as_uuid=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    def __repr__(self):
+        return f"<DocumentArtifact(name={self.name}, tenant={self.tenant_id})>"
+
+
+class DocumentChunk(Base):
+    """
+    Tabla: document_chunks
+
+    Chunks de texto extraído de documentos.
+    Cada chunk tiene nivel jerárquico: 1=texto, 2=summary sección, 3=summary documento.
+    """
+
+    __tablename__ = "document_chunks"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id = Column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    document_id = Column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    chunk_index = Column(Integer, nullable=False)
+    parent_chunk_id = Column(PG_UUID(as_uuid=True), nullable=True)
+    level = Column(Integer, default=1)
+    chunk_type = Column(String(30), default="text")
+    content = Column(Text, nullable=False)
+    metadata_json = Column(JSON, default=dict)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    def __repr__(self):
+        return f"<DocumentChunk(document={self.document_id}, level={self.level})>"
+
+
+class DocumentFTSIndex(Base):
+    """
+    Tabla: document_fts_index
+
+    Índice de búsqueda full-text con PostgreSQL tsvector.
+    """
+
+    __tablename__ = "document_fts_index"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id = Column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    document_id = Column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    chunk_id = Column(PG_UUID(as_uuid=True), nullable=False, unique=True)
+    chunk_index = Column(Integer, nullable=False)
+    level = Column(Integer, nullable=False)
+    search_vector = Column(Text, nullable=False)
+    rank = Column(Float, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    def __repr__(self):
+        return f"<DocumentFTSIndex(document={self.document_id}, chunk={self.chunk_id})>"
