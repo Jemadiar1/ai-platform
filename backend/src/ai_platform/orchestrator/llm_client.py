@@ -637,3 +637,53 @@ class LLMClient:
         Fallback: descomposición basada en reglas simples.
         """
         return [self._rule_based_routing(prompt)]
+
+    def chat(self, prompt: str, tenant_id: str = "", user_id: str = "") -> dict[str, Any]:
+        """
+        Enviar un mensaje al LLM y obtener una respuesta.
+
+        Este método es síncrono y se usa para generar respuestas de chat
+        cuando el módulo ai-connect recibe una acción send_message.
+        """
+        model = self.settings.PRIMARY_MODEL or "qwen3.6"
+
+        try:
+            with httpx.Client(
+                base_url=self.settings.NAN_API_URL
+                if self.settings.LLM_PROVIDER.lower() == "nan"
+                else self.settings.OPENROUTER_API_URL,
+                headers={
+                    "Authorization": f"Bearer {self.settings.NAN_API_KEY if self.settings.LLM_PROVIDER.lower() == 'nan' else self.settings.OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                timeout=60,
+            ) as client:
+                response = client.post(
+                    "/chat/completions",
+                    json={
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": "Eres un asistente de marketing digital de NeuralCrew Labs, una agencia 100% potenciada por IA. Responde de forma útil, concisa y profesional en español."},
+                            {"role": "user", "content": prompt},
+                        ],
+                        "max_tokens": 1024,
+                        "temperature": 0.7,
+                    },
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    content = data["choices"][0]["message"]["content"]
+                    return {"content": content, "model": model}
+
+                logger.warning(f"Chat LLM failed with status {response.status_code}: {response.text[:200]}")
+                return {
+                    "content": "Lo siento, estoy teniendo problemas para generar una respuesta. Intenta de nuevo.",
+                    "model": model,
+                }
+        except Exception as e:
+            logger.error(f"Chat LLM error: {e}")
+            return {
+                "content": "Lo siento, estoy teniendo problemas para generar una respuesta. Intenta de nuevo.",
+                "model": model,
+            }

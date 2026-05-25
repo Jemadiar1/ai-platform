@@ -67,6 +67,7 @@ class Handler:
             "send_whatsapp_message": self._send_whatsapp,
             "make_voice_call": self._make_voice_call,
             "handle_chat_message": self._handle_chat,
+            "send_message": self._send_message,
             "schedule_appointment": self._schedule_appointment,
             "update_contact": self._update_contact,
             "get_contacts": self._get_contacts,
@@ -80,6 +81,50 @@ class Handler:
         logger.info(f"Acción {action} completada")
 
         return {"action": action, "status": "success", "result": result, "timestamp": datetime.utcnow().isoformat()}
+
+    # ========================================================================
+    # Chat IA (respuesta directa con LLM)
+    # ========================================================================
+
+    def _send_message(self, payload: dict) -> dict:
+        """
+        Responder al mensaje del usuario usando el LLM configurado.
+
+        Este es el flujo principal de chat: el usuario escribe algo,
+        Odin lo enruta a ai-connect, y este módulo genera una respuesta
+        con IA usando el proveedor configurado (NAN, OpenRouter, etc.).
+        """
+        message_text = payload.get("metadata", {}).get("message_text", "")
+        channel = payload.get("metadata", {}).get("channel", "")
+        chat_id = payload.get("metadata", {}).get("chat_id", "")
+        tenant_id = payload.get("metadata", {}).get("tenant_id", "")
+        user_id = payload.get("metadata", {}).get("user_id", "")
+
+        if not message_text:
+            raise ValueError("No se proporcionó texto del mensaje")
+
+        logger.info(f"Generando respuesta IA para: {message_text[:100]}")
+
+        try:
+            from ai_platform.orchestrator.llm_client import LLMClient
+
+            llm = LLMClient()
+            response = llm.chat(
+                prompt=message_text,
+                tenant_id=tenant_id,
+                user_id=user_id,
+            )
+            return {
+                "status": "handled",
+                "response": response.get("content", ""),
+                "model": response.get("model", "unknown"),
+            }
+        except Exception as e:
+            logger.error(f"Error generando respuesta IA: {e}")
+            return {
+                "status": "error",
+                "response": f"Lo siento, estoy teniendo problemas para generar una respuesta. Intenta de nuevo.",
+            }
 
     # ========================================================================
     # WhatsApp
