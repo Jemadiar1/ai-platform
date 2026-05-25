@@ -44,6 +44,12 @@ opencv-python-headless = "^4.10.0"
 PyMuPDF = "^1.24.0"
 numpy = "^1.26.0"
 
+# Report renderer internal capability
+Jinja2 = "^3.1.0"
+matplotlib = "^3.9.0"
+weasyprint = "^62.0"
+openpyxl = "^3.1.0"
+
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"
 pytest-asyncio = "^0.24.0"
