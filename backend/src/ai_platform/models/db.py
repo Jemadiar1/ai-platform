@@ -14,7 +14,7 @@ Estructura de tablas:
 
 from uuid import uuid4
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, Float, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, Column, DateTime, Float, Integer, LargeBinary, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from ai_platform.database import Base
@@ -437,3 +437,31 @@ class OCRResult(Base):
 
     def __repr__(self):
         return f"<OCRResult(tenant={self.tenant_id}, confidence={self.overall_confidence:.2f})>"
+
+
+class GeneratedReport(Base):
+    """
+    Tabla: generated_reports
+
+    Reportes generados con múltiples formatos.
+    """
+
+    __tablename__ = "generated_reports"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id = Column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    title = Column(String(500), nullable=False)
+    audience = Column(String(255), nullable=False)
+    generated_formats = Column(JSON, nullable=False)
+    report_spec = Column(JSON, nullable=False)
+    html_content = Column(Text, nullable=True)
+    pdf_blob = Column(LargeBinary, nullable=True)
+    docx_blob = Column(LargeBinary, nullable=True)
+    xlsx_blob = Column(LargeBinary, nullable=True)
+    csv_content = Column(Text, nullable=True)
+    file_size_bytes = Column(Integer, default=0)
+    rendering_time_ms = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    def __repr__(self):
+        return f"<GeneratedReport(tenant={self.tenant_id}, title={self.title})>"
