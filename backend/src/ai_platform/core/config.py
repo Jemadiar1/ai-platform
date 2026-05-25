@@ -140,6 +140,20 @@ class Settings(BaseSettings):
         description="Solapamiento de chars entre chunks adyacentes",
     )
 
+    # === Vision OCR ===
+    OCR_MIN_CONFIDENCE: float = Field(
+        default=0.65,
+        description="Confianza mínima de Tesseract antes de generar advertencias",
+    )
+    OCR_MAX_IMAGE_DIMENSION: int = Field(
+        default=2048,
+        description="Dimensión máxima (lado largo) para procesamiento de imágenes",
+    )
+    OCR_ENABLE_CHART_DETECTION: bool = Field(
+        default=True,
+        description="Habilitar detección de gráficos en imágenes",
+    )
+
     @property
     def is_production(self) -> bool:
         """Verificar si estamos en producción"""
