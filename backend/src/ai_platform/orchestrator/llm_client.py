@@ -664,12 +664,10 @@ class LLMClient:
                 timeout=60,
             ) as client:
                 response = client.post(
-                    "/v1/chat/completions",
+                    "/chat/completions",
                     json={
                         "model": model,
-                        "messages": [
-                            {"role": "user", "content": f"{system_instruction}\n\n{prompt}"},
-                        ],
+                        "prompt": f"{system_instruction}\n\nUser: {prompt}\n\nAssistant:",
                         "max_tokens": 1024,
                         "temperature": 0.7,
                     },
@@ -679,6 +677,8 @@ class LLMClient:
                     data = response.json()
                     if "choices" in data and len(data["choices"]) > 0:
                         content = data["choices"][0].get("message", {}).get("content", "")
+                        if not content:
+                            content = data["choices"][0].get("text", "")
                     else:
                         content = data.get("content", "")
                     if content and content.strip():
