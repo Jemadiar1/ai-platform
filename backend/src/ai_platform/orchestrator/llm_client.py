@@ -647,6 +647,11 @@ class LLMClient:
         """
         model = self.settings.PRIMARY_MODEL or "qwen3.6"
 
+        system_instruction = (
+            "Eres un asistente de marketing digital de NeuralCrew Labs, una agencia 100% potenciada por IA. "
+            "Responde de forma útil, concisa y profesional en español."
+        )
+
         try:
             with httpx.Client(
                 base_url=self.settings.NAN_API_URL
@@ -663,7 +668,7 @@ class LLMClient:
                     json={
                         "model": model,
                         "messages": [
-                            {"role": "system", "content": "Eres un asistente de marketing digital de NeuralCrew Labs, una agencia 100% potenciada por IA. Responde de forma útil, concisa y profesional en español."},
+                            {"role": "system", "content": system_instruction},
                             {"role": "user", "content": prompt},
                         ],
                         "max_tokens": 1024,
@@ -674,13 +679,37 @@ class LLMClient:
                 if response.status_code == 200:
                     data = response.json()
                     content = data["choices"][0]["message"]["content"]
-                    return {"content": content, "model": model}
+                    if content and content.strip() and content.strip().lower() != system_instruction.lower()[:50]:
+                        return {"content": content, "model": model}
+                    logger.warning(f"Chat returned system prompt as response, trying without system role")
+                    # Fallback: try without system role
+                    response2 = client.post(
+                        "/chat/completions",
+                        json={
+                            "model": model,
+                            "messages": [
+                                {"role": "user", "content": f"{system_instruction}\n\n{prompt}"},
+                            ],
+                            "max_tokens": 1024,
+                            "temperature": 0.7,
+                        },
+                    )
+                    if response2.status_code == 200:
+                        data2 = response2.json()
+                        content2 = data2["choices"][0]["message"]["content"]
+                        return {"content": content2, "model": model}
 
                 logger.warning(f"Chat LLM failed with status {response.status_code}: {response.text[:200]}")
                 return {
                     "content": "Lo siento, estoy teniendo problemas para generar una respuesta. Intenta de nuevo.",
                     "model": model,
                 }
+        except Exception as e:
+            logger.error(f"Chat LLM error: {e}")
+            return {
+                "content": "Lo siento, estoy teniendo problemas para generar una respuesta. Intenta de nuevo.",
+                "model": model,
+            }
         except Exception as e:
             logger.error(f"Chat LLM error: {e}")
             return {
