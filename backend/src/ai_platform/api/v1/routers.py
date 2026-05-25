@@ -20,6 +20,7 @@ from fastapi import APIRouter
 
 from ai_platform.api.v1.documents import router as documents_router
 from ai_platform.api.v1.odin import router as odin_router
+from ai_platform.api.v1.reports import router as reports_router
 from ai_platform.api.v1.ping import router as ping_router
 from ai_platform.api.v1.tasks import router as tasks_router
 from ai_platform.api.v1.tenants import router as tenants_router
@@ -36,4 +37,5 @@ router.include_router(tasks_router, prefix="/tasks", tags=["tasks"])
 router.include_router(tenants_router, prefix="/tenants", tags=["tenants"])
 router.include_router(web_research_router, prefix="/web_research", tags=["web_research"])
 router.include_router(documents_router, prefix="/documents", tags=["documents"])
+router.include_router(reports_router, prefix="/reports", tags=["reports"])
 router.include_router(webhooks_router)
