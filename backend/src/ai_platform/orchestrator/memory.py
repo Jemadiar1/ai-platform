@@ -98,7 +98,7 @@ class ContextReferenceManager:
         with make_session() as db:
             result = db.execute(
                 text("""
-                SELECT id, created_at, last_message, message_count
+                SELECT id, created_at, message_count
                 FROM sessions
                 WHERE tenant_id = :tenant_id
                   AND id != :new_session_id
@@ -118,7 +118,6 @@ class ContextReferenceManager:
                     {
                         "session_id": str(row.id),
                         "created_at": row.created_at.isoformat() if row.created_at else None,
-                        "last_message": row.last_message or "",
                         "message_count": row.message_count or 0,
                         "is_active": True,
                     }
@@ -309,7 +308,7 @@ class MemoryManager:
                         FROM agent_memory
                         WHERE agent_id = :session_id
                           AND type = :type
-                          AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id)
+                          AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id::uuid)
                     """),
                     {"session_id": session_id, "type": entry_type},
                 ).first()
@@ -333,7 +332,7 @@ class MemoryManager:
                         WHERE agent_id = :session_id
                           AND type = :type
                           AND content = :content
-                          AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id)
+                          AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id::uuid)
                     """),
                     {"session_id": session_id, "type": entry_type, "content": content},
                 ).first()
@@ -352,7 +351,7 @@ class MemoryManager:
                         INSERT INTO agent_memory (
                             tenant_id, agent_id, type, content, char_count, checksum, created_at
                         ) VALUES (
-                            (SELECT tenant_id FROM sessions WHERE id = :session_id),
+                            (SELECT tenant_id FROM sessions WHERE id = :session_id::uuid),
                             :session_id,
                             :type, :content, :char_count, :checksum, NOW()
                         )
@@ -373,7 +372,7 @@ class MemoryManager:
                         WHERE agent_id = :session_id
                           AND type = :type
                           AND content = :content
-                          AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id)
+                          AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id::uuid)
                         ORDER BY created_at DESC
                         LIMIT 1
                     """),
@@ -482,7 +481,7 @@ class MemoryManager:
                         COUNT(*) FILTER (WHERE type = 'user') as user_count
                     FROM agent_memory
                     WHERE agent_id = :session_id
-                      AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id)
+                      AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id::uuid)
                 """),
                 {"session_id": session_id},
             ).first()
@@ -524,7 +523,7 @@ class MemoryManager:
                     FROM agent_memory
                     WHERE agent_id = :session_id
                       AND type = 'memory'
-                      AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id)
+                      AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id::uuid)
                     ORDER BY created_at DESC
                 """),
                 {"session_id": session_id},
@@ -558,7 +557,7 @@ class MemoryManager:
                     FROM agent_memory
                     WHERE agent_id = :session_id
                       AND type = 'user'
-                      AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id)
+                      AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = :session_id::uuid)
                     ORDER BY created_at DESC
                 """),
                 {"session_id": session_id},
