@@ -70,6 +70,23 @@ Escala el cambio antes de implementar:
 
 No uses una solución de nivel superior al tamaño real del problema.
 
+## Pensar Antes De Codificar
+
+Antes de implementar:
+
+- Declara supuestos explícitamente cuando afecten diseño, datos, seguridad,
+  despliegue o comportamiento visible.
+- Si hay múltiples interpretaciones razonables, preséntalas brevemente y elige
+  solo cuando el riesgo sea bajo.
+- Si la ambigüedad afecta arquitectura, datos, seguridad, billing, despliegue,
+  experiencia contractual o APIs públicas, detente y pregunta.
+- No ocultes confusión. Si algo no cuadra con docs, código o estado del
+  entorno, nombra la contradicción y verifica antes de cambiar archivos.
+- Si existe una solución más simple que cumple el objetivo, úsala o explica por
+  qué no basta.
+- Cuestiona solicitudes que aumenten complejidad, riesgo operativo o deuda sin
+  beneficio claro para NeuralCrew Labs.
+
 ## Fuente De Verdad Del Proyecto
 
 Lee primero estos documentos cuando el cambio toque arquitectura, desarrollo,
@@ -134,11 +151,16 @@ Módulos de negocio:
 
 - Prefiere la solución más simple que cumpla el requisito con seguridad,
   pruebas y claridad.
+- No implementes funcionalidades no solicitadas.
 - No agregues abstracciones, capas, patrones, servicios, colas, caches,
   factories, providers o configuraciones genéricas sin una necesidad concreta
   observada.
+- No agregues flexibilidad, configurabilidad o extensibilidad especulativa.
 - No diseñes para requisitos hipotéticos. Documenta extensiones futuras como
   posibles mejoras, no como implementación obligatoria.
+- No escribas manejo de errores para escenarios imposibles dentro del dominio
+  actual. Sí valida entradas externas, límites de seguridad y fallos
+  operativos reales.
 - Antes de crear una abstracción, verifica que exista duplicación real,
   variación real o una frontera de dominio estable.
 - Si el cambio puede resolverse con una función clara, no crees una clase o
@@ -151,6 +173,9 @@ Módulos de negocio:
 - No arregles problemas adyacentes solo porque los viste. Regístralos como
   deuda o sugerencia, salvo que bloqueen el cambio actual o generen un riesgo
   inmediato.
+- Antes de cerrar, revisa si la solución puede reducirse sustancialmente sin
+  perder correctitud, seguridad ni claridad. Si una solución larga puede ser
+  corta y más clara, simplifica.
 
 ## Dependencias
 
@@ -327,6 +352,107 @@ Si tocas Docker o Nginx, valida la configuración:
 docker compose --env-file infra/docker/.env.example -f infra/docker/docker-compose.prod.yml config --quiet
 ```
 
+## Sincronización Local, GitHub, VPS Y Docker
+
+GitHub es la fuente de verdad del código. Local y VPS deben alinearse contra el
+commit esperado en GitHub.
+
+Invariantes:
+
+- No declares un cambio desplegado si no sabes qué commit está corriendo.
+- No edites código directamente en el VPS como flujo normal.
+- Todo cambio hecho localmente debe terminar en commit y push si será usado por
+  otros entornos.
+- Todo cambio aplicado de emergencia en VPS debe volver a GitHub mediante commit
+  tan pronto como sea posible.
+- Docker debe corresponder al mismo estado lógico del repositorio: Dockerfile,
+  compose, variables, migraciones, imagen y contenedor deben estar alineados.
+
+Flujo local:
+
+1. Verifica estado inicial:
+   `git status --short --branch`
+   `git log -1 --oneline`
+2. Implementa cambios quirúrgicos.
+3. Ejecuta verificación según el área tocada.
+4. Haz stage explícito por archivo.
+5. Crea commit convencional.
+6. Sube a GitHub:
+   `git push origin <branch>`
+7. Confirma que local y origin apuntan al commit esperado:
+   `git status --short --branch`
+   `git rev-parse HEAD`
+   `git rev-parse origin/<branch>`
+
+Flujo VPS:
+
+1. Antes de tocar servicios, identifica commit actual:
+   `git status --short --branch`
+   `git log -1 --oneline`
+   `git rev-parse HEAD`
+2. Actualiza desde GitHub:
+   `git fetch origin`
+   `git pull --ff-only origin <branch>`
+3. Verifica que el VPS quedó en el commit esperado.
+4. Si cambió Dockerfile, compose, dependencias o código incluido en imagen,
+   reconstruye o descarga la imagen correcta antes de validar.
+5. Si cambió configuración Docker, ejecuta `docker compose ... config --quiet`.
+6. Reinicia solo los servicios necesarios.
+7. Verifica `docker compose ps`, logs relevantes y health checks públicos vía
+   Nginx cuando sea producción.
+8. Reporta commit desplegado, servicios reiniciados y verificaciones ejecutadas.
+
+Reglas Docker:
+
+- No asumas que `latest` representa el commit correcto.
+- Prefiere tags por SHA de commit cuando el flujo de build lo permita.
+- Si se usa `latest`, confirma digest o fecha de build antes de validar.
+- Si cambia `pyproject.toml`, Dockerfile, compose, migraciones o variables de
+  entorno, trata el despliegue como cambio operativo, no solo de código.
+- Después de reiniciar contenedores, valida estado, logs y endpoint de health.
+
+Reglas de drift:
+
+- Si local, GitHub y VPS no coinciden, detente y nombra la diferencia.
+- No sigas implementando sobre un entorno desalineado sin decidir primero cuál
+  commit es la fuente correcta.
+- Nunca mezcles cambios locales no commiteados con pulls del remoto sin revisar
+  `git status`.
+- No uses `git reset --hard`, force push ni sobrescrituras destructivas sin
+  aprobación explícita.
+
+Checklist de alineación antes de cerrar:
+
+- Local limpio o cambios pendientes declarados.
+- GitHub contiene el commit esperado.
+- VPS corre el commit esperado si hubo despliegue.
+- Docker, compose, imagen y contenedores están alineados si aplica.
+- Health checks y logs revisados si aplica.
+
+## Ejecución Orientada A Objetivos
+
+Convierte cada tarea en metas verificables antes de implementar.
+
+Para tareas de varios pasos, usa un plan breve:
+
+```text
+1. [Paso] -> verificar: [comando, test o revisión concreta]
+2. [Paso] -> verificar: [comando, test o revisión concreta]
+3. [Paso] -> verificar: [comando, test o revisión concreta]
+```
+
+Ejemplos:
+
+- "Agregar validación" significa probar inputs inválidos y luego hacer que
+  pasen.
+- "Corregir bug" significa reproducir el bug con test, comando o caso manual,
+  corregirlo y volver a verificar.
+- "Refactorizar" significa preservar comportamiento observable y verificar
+  antes y después cuando el riesgo lo justifique.
+
+Criterios débiles como "hacer que funcione" requieren aclaración o conversión a
+un resultado observable.
+
 ## Pruebas Y Verificación
 
 Antes de afirmar que un cambio está completo, ejecuta verificación fresca y lee
@@ -401,6 +527,21 @@ comportamiento, contratos, comandos, despliegue ni arquitectura observable.
   observabilidad.
 - Revisa implicaciones de prompt injection cuando el cambio toque Odin,
   knowledge base, memoria, plugins, skills o subagentes.
+
+## Cambios Quirúrgicos
+
+- Toca solo los archivos necesarios para cumplir la tarea.
+- Cada línea modificada debe poder explicarse desde el pedido del usuario, una
+  verificación fallida o una dependencia directa del cambio.
+- No limpies código adyacente, comentarios, formato o deuda histórica solo
+  porque lo viste.
+- Mantén el estilo existente aunque preferirías otro, salvo que ese estilo cause
+  un bug o riesgo claro.
+- Si encuentras código muerto no relacionado, menciónalo como deuda. No lo
+  elimines sin pedido explícito.
+- Elimina imports, variables, funciones o archivos que tus propios cambios hayan
+  dejado obsoletos.
+- No elimines código muerto preexistente salvo que bloquee el cambio actual.
 
 ## Estilo De Cambios
 
