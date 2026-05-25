@@ -67,6 +67,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxshmfence1 \
     # Web research: content extraction
     libicu72 \
+    # Vision OCR: OpenCV dependencies
+    libgstreamer1.0-0 \
+    libgstreamer-plugins-base1.0-0 \
     # Document ingestion: Tesseract OCR
     tesseract-ocr \
     tesseract-ocr-spa \
