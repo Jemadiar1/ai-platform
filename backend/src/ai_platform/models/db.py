@@ -14,7 +14,19 @@ Estructura de tablas:
 
 from uuid import uuid4
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, Float, Integer, LargeBinary, String, Text, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from ai_platform.database import Base
@@ -211,9 +223,12 @@ class ChannelMapping(Base):
     channel_user_id = Column(String(255), nullable=False)
     channel_username = Column(String(255), nullable=True)
     channel_chat_id = Column(String(255), nullable=True)
-    channel_type = Column(String(50), nullable=True)
+    channel_type = Column(String(50), nullable=True, doc="Tipo de chat: private, group, supergroup")
     config = Column(JSON, default=dict)
     is_active = Column(Boolean, default=True)
+    last_session_id = Column(
+        PG_UUID(as_uuid=True), nullable=True, index=True, doc="Última sesión activa del usuario en este canal"
+    )
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -465,3 +480,58 @@ class GeneratedReport(Base):
 
     def __repr__(self):
         return f"<GeneratedReport(tenant={self.tenant_id}, title={self.title})>"
+
+
+class UserProfile(Base):
+    """
+    Tabla: user_profiles
+
+    Perfil persistente del usuario a través de todas las sesiones.
+    Contiene preferencias, datos personales y patrones de comportamiento
+    que se consolidan desde la memoria de sesión.
+    """
+
+    __tablename__ = "user_profiles"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id = Column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    user_id = Column(String(255), nullable=False, doc="Telegram user_id, Clerk user_id, etc.")
+    content = Column(Text, nullable=False, doc="Perfil estructurado del usuario (§-delimited)")
+    char_count = Column(Integer, nullable=False, default=0)
+    checksum = Column(String(64), nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (UniqueConstraint("tenant_id", "user_id", name="uq_user_profiles_tenant_user"),)
+
+    def __repr__(self):
+        return f"<UserProfile(tenant={self.tenant_id}, user={self.user_id}, chars={self.char_count})>"
+
+
+class KnowledgeBaseDocument(Base):
+    """
+    Tabla: kb_documents
+
+    Documentos persistentes de la base de conocimiento.
+    Reemplaza el almacenamiento en memoria del KnowledgeBase.
+    """
+
+    __tablename__ = "kb_documents"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id = Column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    title = Column(String(500), nullable=False)
+    content = Column(Text, nullable=False)
+    doc_metadata = Column("metadata", JSON, default=dict, doc="Metadata adicional del documento")
+    embedding = Column(
+        JSON,
+        nullable=True,
+        doc="Embedding vector (placeholder para pgvector)",
+    )
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    def __repr__(self):
+        return f"<KnowledgeBaseDocument(tenant={self.tenant_id}, title={self.title})>"

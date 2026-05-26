@@ -84,7 +84,13 @@ class LLMClient:
         # Tracker de límites de tasa para rate limiting
         self._rate_tracker = get_rate_limit_tracker()
 
-    async def route_task(self, prompt: str, tenant_id: str, history: list[dict] | None = None) -> dict[str, Any]:
+    async def route_task(
+        self,
+        prompt: str,
+        tenant_id: str,
+        history: list[dict] | None = None,
+        memory_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Decidir qué módulo debe ejecutar una tarea.
 
@@ -98,6 +104,7 @@ class LLMClient:
             prompt: Input del usuario (ej: "Crear una landing page")
             tenant_id: ID del tenant actual
             history: Historial de conversación relevante
+            memory_context: Contexto de memoria con cross_session_user
 
         Retorna:
             Dict con:
@@ -115,7 +122,11 @@ class LLMClient:
             raise RuntimeError("OPENROUTER_API_KEY no está configurada. Verifica tu .env.")
 
         # Construir el prompt de sistema para la decisión
-        system_prompt = self._build_routing_system_prompt(tenant_id, history)
+        user_profile = ""
+        if memory_context:
+            user_profile = memory_context.get("cross_session_user", "")
+
+        system_prompt = self._build_routing_system_prompt(tenant_id, history, user_profile=user_profile)
 
         # Construir el mensaje del usuario
         user_message = self._build_routing_user_prompt(prompt, history)
@@ -387,7 +398,12 @@ class LLMClient:
         except Exception as e:
             logger.warning(f"Failed to record LLM cost: {e}")
 
-    def _build_routing_system_prompt(self, tenant_id: str, history: list[dict] | None = None) -> str:
+    def _build_routing_system_prompt(
+        self,
+        tenant_id: str,
+        history: list[dict] | None = None,
+        user_profile: str = "",
+    ) -> str:
         """
         Construir el prompt de sistema para la decisión de routing.
 
@@ -430,6 +446,10 @@ class LLMClient:
             '  "needs_decomposition": false\n'
             "}\n\n"
         )
+
+        # Add user profile context if available
+        if user_profile:
+            base += f"\n## Perfil del Usuario\n{user_profile}\n\n"
 
         if history:
             context = "Contexto de conversación relevante:\n"

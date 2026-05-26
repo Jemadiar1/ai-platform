@@ -54,8 +54,8 @@ def _compute_checksum(content: str) -> str:
 
 
 # Límites de caracteres inspirados en Hermes
-MEMORY_MAX_CHARS = 2200  # ~800 tokens de contexto
-USER_MAX_CHARS = 1375  # ~500 tokens de contexto
+MEMORY_MAX_CHARS = 4400  # ~1,600 tokens de contexto
+USER_MAX_CHARS = 2750  # ~1,000 tokens de contexto
 MEMORY_DELIMITER = "§"  # Separador de entradas (hermes-style)
 
 
@@ -217,6 +217,8 @@ class MemoryManager:
         self,
         session_id: str,
         prompt: str,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
     ) -> dict[str, Any]:
         """
         Prefetch: recordar memoria relevante ANTES de cada turno.
@@ -227,11 +229,14 @@ class MemoryManager:
         Parámetros:
             session_id: ID de la sesión
             prompt: Prompt actual del usuario
+            tenant_id: ID del tenant (opcional, para perfil cross-session)
+            user_id: ID del usuario en el canal (opcional, para perfil cross-session)
 
         Retorna:
             Dict con memoria relevante:
                 - memory: texto de MEMORY.md inyectado en system prompt
                 - user: texto de USER.md inyectado en system prompt
+                - cross_session_user: perfil persistente del usuario entre sesiones
                 - search_results: resultados de búsqueda FTS
         """
         memory_text = await self._get_bounded_memory(session_id)
@@ -240,9 +245,15 @@ class MemoryManager:
         # Search en mensajes anteriores para contexto
         search_results = await self._search_context(session_id, prompt, limit=3)
 
+        # Obtener perfil cross-session del usuario
+        cross_session_user = ""
+        if tenant_id and user_id:
+            cross_session_user = await self._get_cross_session_user_profile(tenant_id, user_id)
+
         return {
             "memory": memory_text,
             "user": user_text,
+            "cross_session_user": cross_session_user,
             "search_results": search_results,
             "knowledge_relevant": [],  # Se llena desde Odin con tenant_id
             "total_chars": len(memory_text) + len(user_text),
@@ -508,9 +519,245 @@ class MemoryManager:
         """Cerrar recursos."""
         pass
 
+    async def consolidate_session(
+        self,
+        session_id: str,
+        tenant_id: str,
+        user_id: str,
+    ) -> dict[str, Any]:
+        """
+        Consolidar la memoria de una sesión en el perfil cross-session del usuario.
+
+        Lee las entradas de memoria de la sesión, extrae hechos nuevos,
+        y los fusiona con el perfil cross-session existente.
+        """
+        # 1. Leer todas las entradas de memoria de la sesión
+        session_entries = []
+        with make_session() as db:
+            result = db.execute(
+                text("""
+                    SELECT type, content, created_at
+                    FROM agent_memory
+                    WHERE agent_id = :session_id
+                    ORDER BY created_at ASC
+                """),
+                {"session_id": session_id},
+            ).fetchall()
+
+            for row in result:
+                session_entries.append(
+                    {
+                        "type": row.type,
+                        "content": row.content,
+                        "created_at": row.created_at,
+                    }
+                )
+
+        if not session_entries:
+            return {"success": True, "entries_consolidated": 0, "reason": "no_entries"}
+
+        # 2. Leer perfil cross-session existente
+        existing_profile = ""
+        with make_session() as db:
+            result = db.execute(
+                text("""
+                    SELECT content
+                    FROM user_profiles
+                    WHERE tenant_id = :tenant_id
+                      AND user_id = :user_id
+                    ORDER BY updated_at DESC
+                    LIMIT 1
+                """),
+                {"tenant_id": tenant_id, "user_id": user_id},
+            ).first()
+
+        if result:
+            existing_profile = result.content
+
+        # 3. Extraer solo las entradas de tipo "user" (preferencias, datos personales)
+        user_entries = [e for e in session_entries if e["type"] == "user"]
+
+        if not user_entries:
+            return {"success": True, "entries_consolidated": 0, "reason": "no_user_entries"}
+
+        # 4. Fusionar: agregar solo contenido nuevo (no duplicado)
+        new_content_parts = []
+        existing_parts = [p for p in existing_profile.split(MEMORY_DELIMITER) if p.strip()] if existing_profile else []
+
+        for entry in user_entries:
+            content = entry["content"].strip()
+            if not content:
+                continue
+            if content not in existing_parts:
+                new_content_parts.append(content)
+
+        if not new_content_parts:
+            return {"success": True, "entries_consolidated": 0, "reason": "no_new_content"}
+
+        # 5. Construir el nuevo perfil
+        all_parts = existing_parts + new_content_parts
+        new_profile = MEMORY_DELIMITER.join(all_parts)
+
+        # 6. Calcular checksum
+        new_checksum = _compute_checksum(new_profile)
+
+        # 7. Upsert en user_profiles
+        with make_session() as db:
+            existing_check = db.execute(
+                text("""
+                    SELECT id FROM user_profiles
+                    WHERE tenant_id = :tenant_id
+                      AND user_id = :user_id
+                """),
+                {"tenant_id": tenant_id, "user_id": user_id},
+            ).first()
+
+            if existing_check:
+                db.execute(
+                    text("""
+                        UPDATE user_profiles
+                        SET content = :content, char_count = :chars, checksum = :checksum, updated_at = NOW()
+                        WHERE tenant_id = :tenant_id AND user_id = :user_id
+                    """),
+                    {
+                        "content": new_profile,
+                        "chars": len(new_profile),
+                        "checksum": new_checksum,
+                        "tenant_id": tenant_id,
+                        "user_id": user_id,
+                    },
+                )
+            else:
+                from uuid import uuid4
+
+                db.execute(
+                    text("""
+                        INSERT INTO user_profiles (id, tenant_id, user_id, content, char_count, checksum, created_at, updated_at)
+                        VALUES (:id, :tenant_id, :user_id, :content, :chars, :checksum, NOW(), NOW())
+                    """),
+                    {
+                        "id": str(uuid4()),
+                        "tenant_id": tenant_id,
+                        "user_id": user_id,
+                        "content": new_profile,
+                        "chars": len(new_profile),
+                        "checksum": new_checksum,
+                    },
+                )
+
+            db.commit()
+
+        # Check if profile needs summarization after consolidation
+        await self.summarize_profile(tenant_id, user_id)
+
+        return {
+            "success": True,
+            "entries_consolidated": len(new_content_parts),
+            "new_profile_chars": len(new_profile),
+        }
+
     # -------------------------------------------------------------------------
     # Private methods
     # -------------------------------------------------------------------------
+
+    async def summarize_profile(
+        self,
+        tenant_id: str,
+        user_id: str,
+    ) -> dict[str, Any]:
+        """
+        Cuando user_profiles.content excede 8000 chars, resumizar.
+
+        Preserva hechos importantes, elimina redundancias.
+        En producción, esto llamaría a un LLM para resumir.
+        Por ahora, truncamiento conservador manteniendo las entradas más recientes.
+        """
+        with make_session() as db:
+            result = db.execute(
+                text("""
+                    SELECT content, char_count
+                    FROM user_profiles
+                    WHERE tenant_id = :tenant_id
+                      AND user_id = :user_id
+                """),
+                {"tenant_id": tenant_id, "user_id": user_id},
+            ).first()
+
+        if not result or result.char_count <= 8000:
+            return {"success": True, "action": "no_summarization_needed"}
+
+        # Truncate keeping most recent entries that fit within 8000 chars
+        content = result.content
+        parts = content.split(MEMORY_DELIMITER)
+
+        new_parts = []
+        current_chars = 0
+        for part in reversed(parts):
+            if current_chars + len(part) > 8000:
+                break
+            new_parts.insert(0, part)
+            current_chars += len(part)
+
+        new_content = MEMORY_DELIMITER.join(new_parts)
+        new_checksum = _compute_checksum(new_content)
+
+        with make_session() as db:
+            db.execute(
+                text("""
+                    UPDATE user_profiles
+                    SET content = :content, char_count = :chars, checksum = :checksum, updated_at = NOW()
+                    WHERE tenant_id = :tenant_id AND user_id = :user_id
+                """),
+                {
+                    "content": new_content,
+                    "chars": len(new_content),
+                    "checksum": new_checksum,
+                    "tenant_id": tenant_id,
+                    "user_id": user_id,
+                },
+            )
+            db.commit()
+
+        logger.info(
+            f"User profile summarized: tenant={tenant_id}, user={user_id}, "
+            f"old_chars={result.char_count}, new_chars={len(new_content)}"
+        )
+
+        return {
+            "success": True,
+            "action": "summarized",
+            "old_chars": result.char_count,
+            "new_chars": len(new_content),
+        }
+
+    async def _get_cross_session_user_profile(
+        self,
+        tenant_id: str,
+        user_id: str,
+    ) -> str:
+        """
+        Obtener perfil de usuario cross-session desde la tabla user_profiles.
+        Este perfil persiste entre sesiones y contiene preferencias, datos personales, etc.
+        """
+        with make_session() as db:
+            result = db.execute(
+                text("""
+                    SELECT content
+                    FROM user_profiles
+                    WHERE tenant_id = :tenant_id
+                      AND user_id = :user_id
+                    ORDER BY updated_at DESC
+                    LIMIT 1
+                """),
+                {
+                    "tenant_id": tenant_id,
+                    "user_id": user_id,
+                },
+            ).first()
+
+        if result:
+            return result.content
+        return ""
 
     async def _get_bounded_memory(self, session_id: str) -> str:
         """
@@ -587,7 +834,11 @@ class MemoryManager:
     ) -> list[dict[str, Any]]:
         """
         Buscar contexto relevante en mensajes anteriores.
+
+        Combina búsqueda ILIKE (palabra clave) con búsqueda vectorial
+        por similitud cosina cuando los embeddings están disponibles.
         """
+        # ILIKE search (keyword matching)
         with make_session() as db:
             result = db.execute(
                 text("""
@@ -601,7 +852,7 @@ class MemoryManager:
                 {"session_id": session_id, "query": f"%{query}%", "limit": limit},
             ).fetchall()
 
-            return [
+            ilike_results = [
                 {
                     "role": row.role,
                     "content": row.content or "",
@@ -609,6 +860,53 @@ class MemoryManager:
                 }
                 for row in result
             ]
+
+        # Vector search (semantic similarity)
+        vector_results = []
+        try:
+            from ai_platform.services.embedding_service import get_embedding_service
+
+            embed_service = get_embedding_service()
+            query_embedding = embed_service.generate_embedding(query)
+
+            if query_embedding:
+                with make_session() as db:
+                    result = db.execute(
+                        text("""
+                            SELECT role, content, created_at
+                            FROM messages
+                            WHERE session_id = :session_id
+                              AND embedding IS NOT NULL
+                            ORDER BY embedding <=> :query_embedding
+                            LIMIT :limit
+                        """),
+                        {
+                            "session_id": session_id,
+                            "query_embedding": str(query_embedding),
+                            "limit": limit,
+                        },
+                    ).fetchall()
+
+                    vector_results = [
+                        {
+                            "role": row.role,
+                            "content": row.content or "",
+                            "created_at": row.created_at.isoformat() if row.created_at else None,
+                        }
+                        for row in result
+                    ]
+        except Exception as e:
+            logger.debug(f"Vector search unavailable: {e}")
+
+        # Merge results, deduplicating by content
+        seen = set()
+        merged = []
+        for r in ilike_results + vector_results:
+            if r["content"] not in seen:
+                seen.add(r["content"])
+                merged.append(r)
+
+        return merged[:limit]
 
     @staticmethod
     def _render_block(delimiter: str, entries: list[str]) -> str:

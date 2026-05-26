@@ -120,7 +120,7 @@ services:
 
   # ---- PostgreSQL (SOLO RED INTERNA) ----
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: ai-platform-postgres
     restart: unless-stopped
     environment:

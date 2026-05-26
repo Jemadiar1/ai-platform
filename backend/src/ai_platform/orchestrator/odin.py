@@ -139,6 +139,8 @@ class Odin:
         memory_context = await self.memory_manager.prefetch(
             session_id=session_id,
             prompt=prompt,
+            tenant_id=tenant_id,
+            user_id=user_id,
         )
 
         # Paso 4.5: Buscar en base de conocimiento documentos relevantes
@@ -173,6 +175,7 @@ class Odin:
                 prompt=prompt,
                 tenant_id=tenant_id,
                 history=history,
+                memory_context=memory_context,
             )
         except RuntimeError as e:
             logger.warning(f"LLM unavailable, using fallback: {e}")
@@ -356,6 +359,17 @@ class Odin:
 
             # Completar trayectoria
             self.trajectory_manager.complete_trajectory(session_id)
+
+            # Consolidar memoria de la sesión en el perfil cross-session del usuario
+            try:
+                user_id = decision.get("user_id") or decision.get("session_context", {}).get("user_id", "")
+                await self.memory_manager.consolidate_session(
+                    session_id=session_id,
+                    tenant_id=tenant_id,
+                    user_id=user_id or "",
+                )
+            except Exception as e:
+                logger.warning(f"Memory consolidation failed: {e}")
 
             return {
                 "module": module,

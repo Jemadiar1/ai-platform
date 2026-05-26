@@ -80,6 +80,10 @@ class Settings(BaseSettings):
     NAN_API_KEY: str | None = None
     NAN_API_URL: str = Field(default="https://api.nan.builders/v1")
 
+    # === Embeddings ===
+    EMBEDDING_MODEL: str = Field(default="qwen3-embedding", description="Modelo de embedding para vectorización")
+    EMBEDDING_DIMENSION: int = Field(default=4096, description="Dimensión del vector de embedding")
+
     # === LLM Selection ===
     LLM_PROVIDER: str = Field(default="openrouter")  # openrouter o nan
     PRIMARY_MODEL: str | None = None

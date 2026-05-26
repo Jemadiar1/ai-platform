@@ -4,6 +4,9 @@ Base de conocimiento vectorizada para Odin.
 Implementa búsqueda semántica simple usando TF-IDF (sin dependencias externas
 como FAISS o Chroma) para mantener el proyecto ligero.
 
+Soporta persistencia en DB (kb_documents) con cache en memoria para rendimiento.
+Incluye augmentation con embeddings vectoriales cuando están disponibles.
+
 Inspirado en Hermes Agent's knowledge base:
 - Almacena documentos con metadata por tenant
 - Busca documentos relevantes por similitud de palabras clave
@@ -17,12 +20,18 @@ Ventajas del enfoque TF-IDF puro:
 - Escala linealmente con el número de documentos del tenant
 """
 
+import json
 import logging
 import math
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
+
+from sqlalchemy import text
+
+from ai_platform.core.security import prompt_sanitizer
+from ai_platform.database import make_session
 
 logger = logging.getLogger(__name__)
 
@@ -121,15 +130,20 @@ STOP_WORDS = {
 class Document:
     """Documento indexado en la base de conocimiento."""
 
-    doc_id: str
-    tenant_id: str
-    content: str
+    doc_id: str | None = None
+    tenant_id: str | None = None
+    content: str | None = None
     title: str | None = None
     category: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime | None = None
     updated_at: datetime | None = None
     embedding: list[float] | None = None  # Placeholder para embeddings futuros
+
+    def __post_init__(self):
+        if not self.created_at:
+            self.created_at = datetime.now(UTC)
+        self.content = prompt_sanitizer.sanitize(self.content or "")
 
 
 class TFIDFVectorizer:
@@ -294,6 +308,44 @@ class KnowledgeBase:
         self._documents: dict[str, Document] = {}
         self._vectorizer = TFIDFVectorizer()
         self._max_documents_per_tenant = 1000
+        self._loaded = False
+        self._load_from_db()
+
+    def _load_from_db(self):
+        """Cargar documentos existentes desde DB al cache en memoria."""
+        try:
+            with make_session() as db:
+                result = db.execute(
+                    text("""
+                        SELECT id, tenant_id, title, content, metadata, created_at, updated_at
+                        FROM kb_documents
+                    """)
+                ).fetchall()
+
+                for row in result:
+                    doc_id = str(row.id)
+                    doc = Document(
+                        doc_id=doc_id,
+                        tenant_id=str(row.tenant_id),
+                        title=row.title,
+                        content=row.content,
+                        metadata=row.metadata if row.metadata else {},
+                        created_at=row.created_at,
+                        updated_at=row.updated_at,
+                    )
+                    self._documents[doc_id] = doc
+
+                self._loaded = True
+                logger.info(f"KnowledgeBase loaded {len(self._documents)} documents from DB")
+
+                # Rebuild TF-IDF vectorizer from loaded docs
+                if self._documents:
+                    all_contents = [d.content for d in self._documents.values() if d.content]
+                    if all_contents:
+                        self._vectorizer.fit(all_contents)
+        except Exception as e:
+            logger.warning(f"Error loading KB from DB (in-memory mode): {e}")
+            self._loaded = False
 
     async def add_document(
         self,
@@ -323,6 +375,9 @@ class KnowledgeBase:
         Levanta:
             ValueError: Si se excede el límite de documentos del tenant
         """
+        # Sanitize content
+        content = prompt_sanitizer.sanitize(content)
+
         # Validar límite de capacidad por tenant
         tenant_doc_count = sum(1 for d in self._documents.values() if d.tenant_id == tenant_id)
         if tenant_doc_count >= self._max_documents_per_tenant:
@@ -341,6 +396,26 @@ class KnowledgeBase:
             metadata=metadata or {},
         )
         self._documents[doc_id] = doc
+
+        # Persistir a DB
+        try:
+            with make_session() as db:
+                db.execute(
+                    text("""
+                        INSERT INTO kb_documents (id, tenant_id, title, content, metadata, created_at, updated_at)
+                        VALUES (:id, :tenant_id, :title, :content, :metadata, NOW(), NOW())
+                        ON CONFLICT DO NOTHING
+                    """),
+                    {
+                        "id": doc_id,
+                        "tenant_id": tenant_id,
+                        "title": title or "",
+                        "content": content,
+                        "metadata": json.dumps(metadata or {}),
+                    },
+                )
+        except Exception as e:
+            logger.warning(f"Error persisting document to DB: {e}")
 
         # Re-calcular vectorizador con todos los docs del tenant
         tenant_docs = [d.content for d in self._documents.values() if d.tenant_id == tenant_id]
@@ -364,6 +439,17 @@ class KnowledgeBase:
         """
         if doc_id in self._documents:
             del self._documents[doc_id]
+
+            # Persistir a DB
+            try:
+                with make_session() as db:
+                    db.execute(
+                        text("DELETE FROM kb_documents WHERE id = :doc_id"),
+                        {"doc_id": doc_id},
+                    )
+            except Exception as e:
+                logger.warning(f"Error removing document from DB: {e}")
+
             logger.info(f"Documento eliminado de KB: {doc_id}")
             return True
         return False
@@ -382,6 +468,9 @@ class KnowledgeBase:
         usando similitud de coseno. Solo retorna documentos con
         similitud >= threshold.
 
+        Augmenta resultados TF-IDF con búsqueda vectorial cuando
+        los embeddings están disponibles.
+
         Parámetros:
             query: Texto de búsqueda
             tenant_id: Filtrar documentos por tenant
@@ -396,7 +485,8 @@ class KnowledgeBase:
         if not query_vec:
             return []
 
-        results = []
+        # TF-IDF search
+        tfidf_results = []
         for doc_id, doc in self._documents.items():
             if doc.tenant_id != tenant_id:
                 continue
@@ -408,20 +498,78 @@ class KnowledgeBase:
             similarity = self._vectorizer.cosine_similarity(query_vec, doc_vec)
 
             if similarity >= threshold:
-                results.append(
+                tfidf_results.append(
                     {
                         "doc_id": doc_id,
                         "title": doc.title or "(sin título)",
                         "category": doc.category or "general",
                         "similarity": round(similarity, 4),
-                        "content": doc.content[:500],  # Truncar para no saturar contexto
+                        "content": doc.content[:500],
                         "metadata": doc.metadata,
+                        "source": "tfidf",
                     }
                 )
 
-        # Ordenar por similitud descendente
-        results.sort(key=lambda x: x["similarity"], reverse=True)
-        return results[:limit]
+        # Augment with vector search from DB
+        vector_results = []
+        try:
+            from ai_platform.services.embedding_service import EmbeddingService, get_embedding_service
+
+            embed_service = get_embedding_service()
+            query_embedding = embed_service.generate_embedding(query)
+
+            if query_embedding:
+                # Filter tenant docs that have embeddings
+                tenant_docs_with_embedding = {
+                    doc_id: doc
+                    for doc_id, doc in self._documents.items()
+                    if doc.tenant_id == tenant_id and doc.embedding
+                }
+
+                # Also query DB directly for docs with embeddings
+                with make_session() as db:
+                    result = db.execute(
+                        text("""
+                            SELECT id, title, content, metadata, embedding
+                            FROM kb_documents
+                            WHERE tenant_id = :tenant_id
+                              AND embedding IS NOT NULL
+                        """),
+                        {"tenant_id": tenant_id},
+                    ).fetchall()
+
+                    for row in result:
+                        doc_id = str(row.id)
+                        # Skip if already in memory results
+                        if any(r.get("doc_id") == doc_id for r in tfidf_results):
+                            continue
+
+                        if row.embedding:
+                            try:
+                                sim = EmbeddingService.cosine_similarity(query_embedding, row.embedding)
+                                if sim > 0.3:
+                                    vector_results.append(
+                                        {
+                                            "doc_id": doc_id,
+                                            "title": row.title or "(sin título)",
+                                            "category": (row.metadata or {}).get("category", "general"),
+                                            "similarity": round(sim, 4),
+                                            "content": row.content[:500] if row.content else "",
+                                            "metadata": row.metadata or {},
+                                            "source": "vector",
+                                        }
+                                    )
+                            except (TypeError, ValueError):
+                                continue
+        except Exception as e:
+            logger.debug(f"Vector search augmentation unavailable: {e}")
+
+        # Merge: TF-IDF first, then vector-only results
+        final_results = tfidf_results + vector_results
+
+        # Sort by similarity descending
+        final_results.sort(key=lambda x: x["similarity"], reverse=True)
+        return final_results[:limit]
 
     async def update_document(
         self,
@@ -450,12 +598,32 @@ class KnowledgeBase:
             return False
 
         if content:
+            content = prompt_sanitizer.sanitize(content)
             doc.content = content
         if title:
             doc.title = title
         if metadata:
             doc.metadata.update(metadata)
         doc.updated_at = datetime.now(UTC)
+
+        # Persistir a DB
+        try:
+            with make_session() as db:
+                db.execute(
+                    text("""
+                        UPDATE kb_documents
+                        SET title = :title, content = :content, metadata = :metadata, updated_at = NOW()
+                        WHERE id = :doc_id
+                    """),
+                    {
+                        "doc_id": doc_id,
+                        "title": doc.title or "",
+                        "content": doc.content,
+                        "metadata": json.dumps(doc.metadata),
+                    },
+                )
+        except Exception as e:
+            logger.warning(f"Error updating document in DB: {e}")
 
         # Re-calcular vectorizador para mantener precisión de búsqueda
         tenant_docs = [d.content for d in self._documents.values() if d.tenant_id == doc.tenant_id]
@@ -470,6 +638,8 @@ class KnowledgeBase:
         """
         Obtener un documento por ID con todos sus campos.
 
+        Busca primero en memoria, luego en DB (fallback).
+
         Parámetros:
             doc_id: ID del documento
 
@@ -477,6 +647,30 @@ class KnowledgeBase:
             Dict con campos del documento, o None si no existe
         """
         doc = self._documents.get(doc_id)
+
+        # Fallback a DB si no está en memoria
+        if not doc:
+            try:
+                with make_session() as db:
+                    result = db.execute(
+                        text(
+                            "SELECT id, tenant_id, title, content, metadata, created_at, updated_at FROM kb_documents WHERE id = :doc_id"
+                        ),
+                        {"doc_id": doc_id},
+                    ).first()
+                    if result:
+                        doc = Document(
+                            doc_id=str(result.id),
+                            tenant_id=str(result.tenant_id),
+                            title=result.title,
+                            content=result.content,
+                            metadata=result.metadata if result.metadata else {},
+                            created_at=result.created_at,
+                            updated_at=result.updated_at,
+                        )
+            except Exception as e:
+                logger.warning(f"Error fetching document from DB: {e}")
+
         if doc:
             return {
                 "doc_id": doc.doc_id,
@@ -484,7 +678,7 @@ class KnowledgeBase:
                 "category": doc.category,
                 "content": doc.content,
                 "metadata": doc.metadata,
-                "created_at": doc.created_at.isoformat(),
+                "created_at": doc.created_at.isoformat() if doc.created_at else None,
                 "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
             }
         return None
@@ -524,6 +718,8 @@ class KnowledgeBase:
         """
         Listar documentos de un tenant con filtro opcional por categoría.
 
+        Combina resultados del cache en memoria con DB para consistencia.
+
         Parámetros:
             tenant_id: ID del tenant
             category: Filtrar por categoría (opcional)
@@ -533,6 +729,9 @@ class KnowledgeBase:
             Lista de dicts con info resumida de documentos
         """
         results = []
+        seen_ids = set()
+
+        # From in-memory cache
         for doc in self._documents.values():
             if doc.tenant_id != tenant_id:
                 continue
@@ -543,15 +742,50 @@ class KnowledgeBase:
                     "doc_id": doc.doc_id,
                     "title": doc.title or "(sin título)",
                     "category": doc.category or "general",
-                    "created_at": doc.created_at.isoformat(),
+                    "created_at": doc.created_at.isoformat() if doc.created_at else None,
                     "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
                 }
             )
+            seen_ids.add(doc.doc_id)
 
-        results.sort(
-            key=lambda x: x["created_at"],
-            reverse=True,
-        )
+        # Fallback to DB for docs not in cache
+        if not self._loaded:
+            try:
+                with make_session() as db:
+                    query = text("""
+                        SELECT id, title, metadata, created_at, updated_at
+                        FROM kb_documents
+                        WHERE tenant_id = :tenant_id
+                    """)
+                    if category:
+                        query = text("""
+                            SELECT id, title, metadata, created_at, updated_at
+                            FROM kb_documents
+                            WHERE tenant_id = :tenant_id
+                              AND metadata->>'category' = :category
+                        """)
+
+                    result = db.execute(
+                        query,
+                        {"tenant_id": tenant_id, "category": category} if category else {"tenant_id": tenant_id},
+                    ).fetchall()
+
+                    for row in result:
+                        if str(row.id) not in seen_ids:
+                            results.append(
+                                {
+                                    "doc_id": str(row.id),
+                                    "title": row.title or "(sin título)",
+                                    "category": (row.metadata or {}).get("category", "general"),
+                                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                                    "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+                                }
+                            )
+                            seen_ids.add(str(row.id))
+            except Exception as e:
+                logger.warning(f"Error listing documents from DB: {e}")
+
+        results.sort(key=lambda x: x["created_at"] or "", reverse=True)
         return results[:limit]
 
 

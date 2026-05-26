@@ -19,6 +19,8 @@ Los routers se agrupan por resource:
 from fastapi import APIRouter
 
 from ai_platform.api.v1.documents import router as documents_router
+from ai_platform.api.v1.feedback import router as feedback_router
+from ai_platform.api.v1.kb import router as kb_router
 from ai_platform.api.v1.odin import router as odin_router
 from ai_platform.api.v1.ping import router as ping_router
 from ai_platform.api.v1.reports import router as reports_router
@@ -39,3 +41,5 @@ router.include_router(web_research_router, prefix="/web_research", tags=["web_re
 router.include_router(documents_router, prefix="/documents", tags=["documents"])
 router.include_router(reports_router, prefix="/reports", tags=["reports"])
 router.include_router(webhooks_router)
+router.include_router(kb_router)
+router.include_router(feedback_router)

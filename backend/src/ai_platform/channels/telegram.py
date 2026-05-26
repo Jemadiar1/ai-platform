@@ -321,3 +321,102 @@ def create_telegram_keyboard(buttons: list[list[str]], url: str | None = None) -
         "resize_keyboard": True,
         "one_time_keyboard": True,
     }
+
+
+# Mapeo de reacciones emoji a ratings para feedback
+REACTION_RATING_MAP: dict[str, int] = {
+    "emoji_thumbs_up": 3,
+    "emoji_thumbs_down": 1,
+    "emoji_heart": 3,
+    "emoji_fire": 3,
+    "emoji_star": 3,
+}
+
+
+class TelegramReactionHandler:
+    """
+    Manejador de reacciones de Telegram para feedback.
+
+    Mapea reacciones emoji a ratings numéricos (1-3)
+    que se registran en el sistema de feedback.
+    """
+
+    def __init__(self, bot_token: str | None = None):
+        self.settings = get_settings()
+        self.token = bot_token or self.settings.TELEGRAM_BOT_TOKEN
+        self.base_url = f"https://api.telegram.org/bot{self.token}" if self.token else ""
+
+    def handle_reaction(self, reaction: dict[str, Any]) -> dict[str, Any]:
+        """
+        Manejar una reacción a un mensaje del bot.
+
+        Parámetros:
+            reaction: Dict con estructura de message_reaction de Telegram
+
+        Retorna:
+            Dict con resultado del manejo de reacción
+        """
+        message = reaction.get("message", {})
+        chat = message.get("chat", {})
+        user = reaction.get("user", {})
+        reaction_obj = reaction.get("reaction", [{}])[0] if reaction.get("reaction") else {}
+
+        reaction_type = reaction_obj.get("type", {}).get("name", "") if reaction_obj.get("type") else ""
+        rating = REACTION_RATING_MAP.get(reaction_type)
+
+        if rating is None:
+            return {"status": "ignored", "reaction": reaction_type}
+
+        chat_id = str(chat.get("id", ""))
+        user_id = str(user.get("id", ""))
+
+        logger.info(f"Reaction feedback: user={user_id}, chat={chat_id}, reaction={reaction_type}, rating={rating}")
+
+        return {
+            "status": "recorded",
+            "reaction": reaction_type,
+            "rating": rating,
+            "user_id": user_id,
+            "chat_id": chat_id,
+        }
+
+    def handle_command(self, message_text: str, chat_id: str, user_id: str) -> dict[str, Any]:
+        """
+        Manejar comandos slash (/rate up, /rate down, etc.).
+
+        Parámetros:
+            message_text: Texto completo del mensaje del usuario
+            chat_id: ID del chat
+            user_id: ID del usuario
+
+        Retorna:
+            Dict con resultado del manejo del comando
+        """
+        parts = message_text.strip().split()
+        if not parts:
+            return {"status": "ignored"}
+
+        command = parts[0].lower()
+
+        if command == "/rate":
+            rating_str = parts[1].lower() if len(parts) > 1 else ""
+            if rating_str in ("up", "\U0001f44d", "+"):
+                return {
+                    "status": "recorded",
+                    "rating": 3,
+                    "response": "Feedback registrado: \U0001f44d \u00a1Gracias!",
+                }
+            elif rating_str in ("down", "\U0001f44e", "-"):
+                return {
+                    "status": "recorded",
+                    "rating": 1,
+                    "response": "Feedback registrado: \U0001f44e Lo sentimos. Mejoremos.",
+                }
+            else:
+                return {
+                    "status": "recorded",
+                    "rating": 2,
+                    "response": "Usa: /rate up o /rate down para calificar respuestas de Od\u00edn.",
+                }
+
+        return {"status": "ignored"}

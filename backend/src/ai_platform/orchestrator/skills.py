@@ -343,6 +343,7 @@ class SkillManager:
         prompt: str,
         result: dict[str, Any],
         task_complexity: int,
+        trajectory_data: dict[str, Any] | None = None,
     ) -> str | None:
         """
         Learning loop: auto-crear skill después de tareas complejas.
@@ -356,6 +357,7 @@ class SkillManager:
             prompt: Prompt original del usuario
             result: Resultado de la tarea
             task_complexity: Número de pasos/tool calls
+            trajectory_data: Datos del trajectory para análisis de patrones
 
         Retorna:
             Nombre del skill creado o None
@@ -364,10 +366,33 @@ class SkillManager:
         if task_complexity < 5:
             return None
 
-        # TODO: Aquí iría la lógica real de análisis con LLM
-        # Por ahora, placeholder
-        logger.info(f"Auto-skill creation triggered for tenant {tenant_id}, complexity={task_complexity}")
+        if trajectory_data:
+            steps = trajectory_data.get("steps", [])
+            if not steps:
+                return None
 
+            # Extract key information from trajectory
+            modules_used = list({str(s.get("module", "unknown")) for s in steps})
+            step_types = [str(s.get("step_type", "unknown")) for s in steps]
+
+            # Build a summary of the task pattern
+            task_summary = f"Task pattern: {' -> '.join(step_types)}"
+
+            logger.info(
+                f"Auto-skill creation triggered for tenant {tenant_id}, "
+                f"complexity={task_complexity}, modules={modules_used}"
+            )
+
+            return {
+                "success": True,
+                "pattern_detected": True,
+                "modules_used": modules_used,
+                "complexity": task_complexity,
+                "summary": task_summary,
+                "message": "Pattern detected. In production, an LLM would analyze this and create a reusable skill.",
+            }
+
+        logger.info(f"Auto-skill creation triggered for tenant {tenant_id}, complexity={task_complexity}")
         return None
 
     async def scan_security(

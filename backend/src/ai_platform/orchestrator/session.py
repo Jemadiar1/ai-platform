@@ -18,6 +18,7 @@ Modelos de DB necesarios (se agregan en db.py):
 
 import json
 import logging
+from datetime import UTC
 from typing import Any
 from uuid import uuid4
 
@@ -598,6 +599,77 @@ class SessionManager:
     async def close(self) -> None:
         """Cerrar recursos."""
         pass
+
+    async def resolve_session_for_user(
+        self,
+        tenant_id: str,
+        channel_user_id: str,
+        max_age_hours: int = 24,
+    ) -> str | None:
+        """
+        Find the most recent active session for a channel user.
+
+        Returns session_id if found, None if all sessions are expired or don't exist.
+        """
+        from datetime import datetime, timedelta
+
+        cutoff = datetime.now(UTC) - timedelta(hours=max_age_hours)
+
+        with make_session() as db:
+            result = db.execute(
+                text("""
+                    SELECT s.id
+                    FROM sessions s
+                    JOIN channel_mappings cm ON cm.last_session_id = s.id
+                    WHERE cm.channel = 'telegram'
+                      AND cm.channel_user_id = :channel_user_id
+                      AND cm.tenant_id = :tenant_id
+                      AND s.ended_at IS NULL
+                      AND s.updated_at >= :cutoff
+                    ORDER BY s.updated_at DESC
+                    LIMIT 1
+                """),
+                {
+                    "channel_user_id": channel_user_id,
+                    "tenant_id": tenant_id,
+                    "cutoff": cutoff,
+                },
+            ).first()
+
+            return str(result.id) if result else None
+
+    async def close_idle_sessions(
+        self,
+        tenant_id: str,
+        channel_user_id: str,
+    ) -> int:
+        """
+        Close all active sessions for a channel user that are older than 24h.
+        Returns the number of sessions closed.
+        """
+        with make_session() as db:
+            result = db.execute(
+                text("""
+                    UPDATE sessions
+                    SET ended_at = NOW()
+                    WHERE tenant_id = :tenant_id
+                      AND id IN (
+                        SELECT cm.last_session_id
+                        FROM channel_mappings cm
+                        WHERE cm.channel = 'telegram'
+                          AND cm.channel_user_id = :channel_user_id
+                          AND cm.last_session_id IS NOT NULL
+                      )
+                      AND ended_at IS NULL
+                      AND updated_at < NOW() - INTERVAL '24 hours'
+                """),
+                {
+                    "tenant_id": tenant_id,
+                    "channel_user_id": channel_user_id,
+                },
+            )
+            db.commit()
+            return result.rowcount
 
 
 # ========================================================================

@@ -673,13 +673,27 @@ async def _process_channel_message(
 
     user_id_platform = str(mapping.user_id) if mapping.user_id else None
 
-    # Paso 2: Llamar a Odin para routing
+    # Paso 2: Resolver session por channel_user_id (reutilizar sesión activa si existe)
+    from ai_platform.orchestrator.session import get_session_manager
+
+    session_mgr = get_session_manager()
+    resolved_session_id = await session_mgr.resolve_session_for_user(
+        tenant_id=tenant_id,
+        channel_user_id=user_id,
+    )
+
+    # Paso 2.5: Cerrar sesiones idle del mismo usuario si están expiradas
+    try:
+        await session_mgr.close_idle_sessions(tenant_id=tenant_id, channel_user_id=user_id)
+    except Exception:
+        pass
+
     try:
         decision = await odin_inst.decide(
             prompt=message_text,
             tenant_id=tenant_id,
             user_id=user_id_platform,
-            session_id=None,
+            session_id=resolved_session_id,
         )
     except Exception as e:
         logger.error(f"Error en Odin.decide(): {e}")
@@ -691,9 +705,27 @@ async def _process_channel_message(
     action = decision["action"]
     params = decision.get("params", {})
 
-    # Paso 3: Actualizar session_id en mapeo
+    # Paso 3: Actualizar session_id en channel_mappings para reutilización futura
+    if session_id and mapping:
+        with make_session() as db:
+            db.execute(
+                text("""
+                    UPDATE channel_mappings
+                    SET last_session_id = :session_id
+                    WHERE id = :mapping_id
+                """),
+                {"session_id": session_id, "mapping_id": mapping.id},
+            )
+            db.commit()
+
+    # Paso 4: Actualizar chat_id en el mapeo de canal
     if session_id:
-        channel_update_channel(session_id=session_id, channel=channel, chat_id=chat_id)
+        channel_update_channel(
+            session_id=session_id,
+            channel=channel,
+            chat_id=chat_id,
+            channel_user_id=user_id,
+        )
 
     # Paso 4: Ejecutar el módulo seleccionado
     try:
@@ -843,7 +875,7 @@ async def _execute_module(
         }
 
 
-def channel_update_channel(session_id: str, channel: str, chat_id: str):
+def channel_update_channel(session_id: str, channel: str, chat_id: str, channel_user_id: str | None = None):
     """
     Actualizar el chat_id del mapeo de canal asociado a la sesión.
 
@@ -854,6 +886,7 @@ def channel_update_channel(session_id: str, channel: str, chat_id: str):
         session_id: ID de la sesión de Odin
         channel: Canal ("telegram", "discord", "whatsapp")
         chat_id: Chat_id actual del usuario
+        channel_user_id: ID del usuario en el canal (para filtrar el mapeo correcto)
     """
     from ai_platform.database import make_session
 
@@ -861,18 +894,26 @@ def channel_update_channel(session_id: str, channel: str, chat_id: str):
         return
 
     with make_session() as db:
-        # Actualizar el mapa del canal por channel_user_id (no por session_id)
-        from sqlalchemy import text
-
-        db.execute(
-            text("""
-                UPDATE channel_mappings
-                SET channel_chat_id = :chat_id
-                WHERE channel = :channel
-                  AND channel_user_id IS NOT NULL
-            """),
-            {"chat_id": chat_id, "channel": channel},
-        )
+        if channel_user_id:
+            db.execute(
+                text("""
+                    UPDATE channel_mappings
+                    SET channel_chat_id = :chat_id
+                    WHERE channel = :channel
+                      AND channel_user_id = :channel_user_id
+                """),
+                {"chat_id": chat_id, "channel": channel, "channel_user_id": channel_user_id},
+            )
+        else:
+            db.execute(
+                text("""
+                    UPDATE channel_mappings
+                    SET channel_chat_id = :chat_id
+                    WHERE channel = :channel
+                      AND channel_user_id IS NOT NULL
+                """),
+                {"chat_id": chat_id, "channel": channel},
+            )
         db.commit()
 
 
