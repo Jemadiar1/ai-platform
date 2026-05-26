@@ -33,9 +33,9 @@ settings = get_settings()
 
 # Modelos disponibles para decisiones de orquestación
 ROUTING_MODELS = {
-    "primary": "anthropic/claude-3.5-sonnet",  # Mejor para decisiones complejas
-    "fallback": "openai/gpt-4o-mini",  # Fallback más económico
-    "fast": "google/gemini-2.0-flash-exp:free",  # Modelo gratuito para testing
+    "primary": "qwen3.6",  # Modelo por defecto NAN
+    "fallback": "qwen3.6",  # Fallback NAN
+    "fast": "qwen3.6",  # Modelo rápido NAN
 }
 
 # Timeout de 30 segundos por llamada LLM
