@@ -1,0 +1,44 @@
+# Dev Dockerfile - construye directamente desde backend/
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    APP_ENV=development \
+    APP_HOST=0.0.0.0 \
+    APP_PORT=4000 \
+    PYTHONPATH=/app/src
+
+# System deps (Debian Trixie / python:3.11-slim)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libpq-dev \
+    libglib2.0-0 libnss3 libatk1.0-0 libatk-bridge2.0-0 \
+    libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
+    libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 \
+    libicu76 libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 \
+    tesseract-ocr tesseract-ocr-spa tesseract-ocr-eng \
+    libleptonica-dev libmagic1t64 \
+    libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 libffi-dev shared-mime-info \
+    curl && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy requirements first (cache layer)
+COPY backend/requirements.dev.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY backend/src ./src
+COPY backend/alembic ./alembic
+COPY backend/alembic.ini ./
+
+# Install Playwright browsers
+RUN playwright install --with-deps chromium 2>&1 || \
+    (apt-get install -y --no-install-recommends fonts-unifont fonts-noto-core && playwright install chromium)
+
+EXPOSE 4000
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:4000/api/v1/health || exit 1
+
+CMD ["uvicorn", "ai_platform.main:app", "--host", "0.0.0.0", "--port", "4000"]
