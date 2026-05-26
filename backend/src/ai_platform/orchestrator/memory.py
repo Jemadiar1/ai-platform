@@ -317,7 +317,7 @@ class MemoryManager:
                     text(f"""
                         SELECT COALESCE(SUM(CHAR_LENGTH(content)), 0) as total
                         FROM agent_memory
-                        WHERE agent_id = :session_id
+                        WHERE agent_id = :session_id::text::text
                           AND type = :type
                           AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = '{session_id}'::uuid)
                     """),
@@ -340,7 +340,7 @@ class MemoryManager:
                 existing = db.execute(
                     text(f"""
                         SELECT id FROM agent_memory
-                        WHERE agent_id = :session_id
+                        WHERE agent_id = :session_id::text::text
                           AND type = :type
                           AND content = :content
                           AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = '{session_id}'::uuid)
@@ -380,7 +380,7 @@ class MemoryManager:
                 verify_result = db.execute(
                     text(f"""
                         SELECT checksum FROM agent_memory
-                        WHERE agent_id = :session_id
+                        WHERE agent_id = :session_id::text
                           AND type = :type
                           AND content = :content
                           AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = '{session_id}'::uuid)
@@ -491,7 +491,7 @@ class MemoryManager:
                         COUNT(*) FILTER (WHERE type = 'memory') as memory_count,
                         COUNT(*) FILTER (WHERE type = 'user') as user_count
                     FROM agent_memory
-                    WHERE agent_id = :session_id
+                    WHERE agent_id = :session_id::text
                       AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = '{session_id}'::uuid)
                 """),
                 {"session_id": session_id},
@@ -538,7 +538,7 @@ class MemoryManager:
                 text("""
                     SELECT type, content, created_at
                     FROM agent_memory
-                    WHERE agent_id = :session_id
+                    WHERE agent_id = :session_id::text
                     ORDER BY created_at ASC
                 """),
                 {"session_id": session_id},
@@ -768,7 +768,7 @@ class MemoryManager:
                 text(f"""
                     SELECT content
                     FROM agent_memory
-                    WHERE agent_id = :session_id
+                    WHERE agent_id = :session_id::text
                       AND type = 'memory'
                       AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = '{session_id}'::uuid)
                     ORDER BY created_at DESC
@@ -802,7 +802,7 @@ class MemoryManager:
                 text(f"""
                     SELECT content
                     FROM agent_memory
-                    WHERE agent_id = :session_id
+                    WHERE agent_id = :session_id::text
                       AND type = 'user'
                       AND tenant_id = (SELECT tenant_id FROM sessions WHERE id = '{session_id}'::uuid)
                     ORDER BY created_at DESC
