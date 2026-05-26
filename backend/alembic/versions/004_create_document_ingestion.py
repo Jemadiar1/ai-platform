@@ -57,7 +57,7 @@ def upgrade() -> None:
         sa.Column("level", sa.Integer(), server_default="1"),
         sa.Column("chunk_type", sa.String(30), server_default="text"),
         sa.Column("content", sa.Text(), nullable=False),
-        sa.Column("metadata_json", sa.JSON(), server_default="{}"),
+        sa.Column("metadata_json", postgresql.JSONB(), server_default="{}"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.ForeignKeyConstraint(["document_id"], ["document_artifacts.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["parent_chunk_id"], ["document_chunks.id"], ondelete="SET NULL"),
