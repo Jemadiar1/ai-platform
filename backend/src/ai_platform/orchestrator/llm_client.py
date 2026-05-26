@@ -81,6 +81,8 @@ class LLMClient:
             },
             timeout=LLM_TIMEOUT,
         )
+        # NAN API uses /chat/completions (no /v1 prefix in path)
+        self._chat_path = "/chat/completions" if self.settings.LLM_PROVIDER.lower() == "nan" else "/v1/chat/completions"
         # Tracker de límites de tasa para rate limiting
         self._rate_tracker = get_rate_limit_tracker()
 
@@ -140,7 +142,7 @@ class LLMClient:
 
         try:
             response = await self.client.post(
-                "/v1/chat/completions",
+                self._chat_path,
                 json={
                     "model": model,
                     "messages": self._build_cached_messages(
