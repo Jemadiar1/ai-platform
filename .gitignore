@@ -36,3 +36,6 @@ __pycache__/
 .opencode/
 .agents/
 .claude/
+
+# Worktrees
+.worktrees/
