@@ -66,7 +66,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     libxshmfence1 \
     # Web research: content extraction
-    libicu72 \
+    libicu76 \
     # Vision OCR: OpenCV dependencies
     libgstreamer1.0-0 \
     libgstreamer-plugins-base1.0-0 \
@@ -76,10 +76,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr-eng \
     libleptonica-dev \
     # Document ingestion: python-magic
-    libmagic1 \
+    libmagic1t64 \
     # Report renderer: WeasyPrint
     libpangocairo-1.0-0 \
-    libgdk-pixbuf2.0-0 \
+    libgdk-pixbuf-2.0-0 \
     libffi-dev \
     shared-mime-info \
     curl \
