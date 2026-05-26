@@ -25,7 +25,7 @@
 services:
   # ---- AI Platform Backend ----
   app:
-    image: ghcr.io/${GITHUB_REPOSITORY:-jemadiar1/ai-platform}:${IMAGE_TAG:-latest}
+    image: ai-platform-app:latest
     container_name: ai-platform-api
     restart: unless-stopped
     expose:
