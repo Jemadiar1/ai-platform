@@ -165,9 +165,9 @@ services:
     restart: unless-stopped
     environment:
       - NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx
-      - NGINX_SERVER_NAME=${NGINX_SERVER_NAME:-localhost}
-      - NGINX_SSL_CERT_PATH=${NGINX_SSL_CERT_PATH:-/etc/nginx/ssl/live/localhost/fullchain.pem}
-      - NGINX_SSL_KEY_PATH=${NGINX_SSL_KEY_PATH:-/etc/nginx/ssl/live/localhost/privkey.pem}
+      - NGINX_SERVER_NAME=${NGINX_SERVER_NAME:-vmi3151337.contaboserver.net}
+      - NGINX_SSL_CERT_PATH=${NGINX_SSL_CERT_PATH:-/etc/letsencrypt/live/vmi3151337.contaboserver.net/fullchain.pem}
+      - NGINX_SSL_KEY_PATH=${NGINX_SSL_KEY_PATH:-/etc/letsencrypt/live/vmi3151337.contaboserver.net/privkey.pem}
     ports:
       - "80:80"
       - "443:443"
