@@ -435,6 +435,16 @@ async def _send_to_channel(channel: str, chat_id: str | None, text: str) -> None
 
 def _extract_response_text(module_result: Any) -> str:
     """Extraer texto legible del resultado del módulo."""
+    # Keys que son metadatos, no respuestas al usuario
+    _METADATA_KEYS = {
+        "module", "status", "action", "error", "timestamp", "channel",
+        "session_id", "confidence", "reasoning", "params", "needs_decomposition",
+        "subtasks", "session_context", "memory_context", "kb_context",
+        "result", "note", "data",
+    }
+    # Strings que típicamente son valores de metadata no válidos como respuesta
+    _STATUS_STRINGS = {"success", "ok", "pending", "completed", "failed", "error", "ignored", "rejected", "handled"}
+
     if isinstance(module_result, dict):
         # Prioridad: response > message > text > result.nested > datos
         for key in ("response", "message", "text"):
@@ -450,14 +460,28 @@ def _extract_response_text(module_result: Any) -> str:
                     val = nested[key]
                     if isinstance(val, str) and val.strip():
                         return val[:4096]
-        # Si hay cualquier campo con string, usar el primero
-        for val in module_result.values():
-            if isinstance(val, str) and val.strip():
+            # fallback: usar primer string dentro de result que no sea metadata
+            for key in ("response", "message", "text", "reply"):
+                if key in nested:
+                    val = nested[key]
+                    if isinstance(val, str) and val.strip() and val not in _STATUS_STRINGS:
+                        return val[:4096]
+        # Usar cualquier string dentro de result si nada más funciona
+        if "result" in module_result and isinstance(module_result["result"], str):
+            val = module_result["result"]
+            if val.strip() and val not in _STATUS_STRINGS:
                 return val[:4096]
+        # Si hay cualquier campo con string, usar el primero (excluyendo metadata)
+        for key, val in module_result.items():
+            if isinstance(val, str) and val.strip():
+                if key not in _STATUS_STRINGS and val not in _STATUS_STRINGS:
+                    return val[:4096]
         if "error" in module_result:
-            return "Error: " + module_result["error"]
+            return str(module_result["error"])
     elif isinstance(module_result, str) and module_result.strip():
-        return module_result[:4096]
+        if module_result not in _STATUS_STRINGS:
+            return module_result[:4096]
+    return ""
     return ""
 
 

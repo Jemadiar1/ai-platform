@@ -64,15 +64,14 @@ class Settings(BaseSettings):
     JWT_EXPIRATION_HOURS: int = Field(default=24)
     JWT_ALGORITHM: str = Field(default="HS256")
 
-    # LLM Provider
-    LLM_PROVIDER: str = Field(default="nan")  # nan
-    PRIMARY_MODEL: str | None = None
-    FALLBACK_MODEL: str | None = None
-    FAST_MODEL: str | None = None
-
     # === NaN Builders (Custom GPU) ===
     NAN_API_KEY: str | None = None
     NAN_API_URL: str = Field(default="https://api.nan.builders/v1")
+    EMBEDDING_MODEL: str = Field(default="qwen3-embedding", description="Modelo de embedding para vectorización")
+    EMBEDDING_DIMENSION: int = Field(default=4096, description="Dimensión del vector de embedding")
+
+    # === LLM Selection ===
+    LLM_PROVIDER: str = Field(default="nan")  # nan
 
     # === WhatsApp API ===
     WHATSAPP_PHONE_NUMBER_ID: str | None = None
