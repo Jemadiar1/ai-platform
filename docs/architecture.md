@@ -21,7 +21,7 @@ flowchart TD
     NGINX --> API[FastAPI backend<br/>backend/src/ai_platform]
     API --> ROUTERS[API v1 routers]
     ROUTERS --> Odin[Odin orchestrator]
-    Odin --> LLM[OpenRouter / NaN / fallback rule-based]
+        Odin --> LLM[NaN / fallback rule-based]
     Odin --> MODS[Python modules ai-*]
     API --> DB[(PostgreSQL)]
     API --> REDIS[(Redis)]

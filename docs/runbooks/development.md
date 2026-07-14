@@ -22,7 +22,6 @@ Para desarrollo local, crea `.env` en la raíz o exporta las variables antes de 
 Notas importantes:
 
 - `SECRET_KEY` no puede quedarse en el valor placeholder en producción.
-- `WHATSAPP_APP_SECRET` se usa en el canal WhatsApp, pero todavía no está declarado en `Settings`.
 - `CORS_ORIGINS` aparece en Compose productivo, pero FastAPI todavía usa una lista hardcodeada de localhost.
 
 ## Infraestructura Local
@@ -217,7 +216,6 @@ Advertencia: algunos scripts de despliegue todavía prueban `http://localhost:40
 - `channel_mappings` ahora es nullable en tenant_id (migración 002). Ya no bloquea webhooks de canales.
 - `Odin._invoke_module()` todavía no ejecuta handlers reales.
 - El dashboard intenta leer `/api/v1/usage`, pero la API no expone esa ruta.
-- `WHATSAPP_APP_SECRET` falta en `.env.example` (sí está en Settings).
 - Prometheus apunta a `api-gateway:4000`, que no representa el despliegue actual.
 
 ## Telegram Webhook
