@@ -64,31 +64,15 @@ class Settings(BaseSettings):
     JWT_EXPIRATION_HOURS: int = Field(default=24)
     JWT_ALGORITHM: str = Field(default="HS256")
 
-    # === Clerk (Auth externa) ===
-    CLERK_SECRET_KEY: str | None = None
-    CLERK_API_URL: str = Field(default="https://api.clerk.com")
-
-    # === Stripe (Billing) ===
-    STRIPE_SECRET_KEY: str | None = None
-    STRIPE_WEBHOOK_SECRET: str | None = None
-
-    # === LLM ===
-    OPENROUTER_API_KEY: str | None = None
-    OPENROUTER_API_URL: str = Field(default="https://openrouter.ai/api/v1")
+    # LLM Provider
+    LLM_PROVIDER: str = Field(default="nan")  # nan
+    PRIMARY_MODEL: str | None = None
+    FALLBACK_MODEL: str | None = None
+    FAST_MODEL: str | None = None
 
     # === NaN Builders (Custom GPU) ===
     NAN_API_KEY: str | None = None
     NAN_API_URL: str = Field(default="https://api.nan.builders/v1")
-
-    # === Embeddings ===
-    EMBEDDING_MODEL: str = Field(default="qwen3-embedding", description="Modelo de embedding para vectorización")
-    EMBEDDING_DIMENSION: int = Field(default=4096, description="Dimensión del vector de embedding")
-
-    # === LLM Selection ===
-    LLM_PROVIDER: str = Field(default="openrouter")  # openrouter o nan
-    PRIMARY_MODEL: str | None = None
-    FALLBACK_MODEL: str | None = None
-    FAST_MODEL: str | None = None
 
     # === WhatsApp API ===
     WHATSAPP_PHONE_NUMBER_ID: str | None = None
@@ -104,9 +88,6 @@ class Settings(BaseSettings):
     # === Discord API ===
     DISCORD_BOT_TOKEN: str | None = None
     DISCORD_CHANNEL_ID: str | None = None
-
-    # === Vapi.ai (Voz IA) ===
-    VAPI_API_KEY: str | None = None
 
     # === Logging ===
     LOG_LEVEL: str = Field(default="INFO")

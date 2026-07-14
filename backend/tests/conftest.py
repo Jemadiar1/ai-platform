@@ -196,7 +196,6 @@ def mock_settings(monkeypatch):
     mock_settings.WHATSAPP_ACCESS_TOKEN = "wa_access_token"
     mock_settings.WHATSAPP_WEBHOOK_VERIFY_TOKEN = "wa_verify_token"
     mock_settings.WHATSAPP_APP_SECRET = None
-    mock_settings.CLERK_SECRET_KEY = "test_clerk_secret"
     monkeypatch.setattr("ai_platform.core.security.get_settings", lambda: mock_settings)
     monkeypatch.setattr("ai_platform.core.config.get_settings", lambda: mock_settings)
     monkeypatch.setattr("ai_platform.channels.telegram.get_settings", lambda: mock_settings)
