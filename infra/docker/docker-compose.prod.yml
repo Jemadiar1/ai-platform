@@ -159,6 +159,7 @@ services:
     volumes:
       - ./nginx/nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
       - ./nginx/ssl:/etc/nginx/ssl:rw
+      - ./nginx/ssl/live:/etc/letsencrypt/live:ro
     depends_on:
       - app
     networks:
