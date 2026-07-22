@@ -97,6 +97,10 @@ class Settings(BaseSettings):
         description="Orígenes permitidos para CORS, separados por coma",
     )
 
+    # === Celery ===
+    CELERY_BROKER_URL: str | None = Field(default=None, description="URL del broker Redis para Celery")
+    CELERY_RESULT_BACKEND: str | None = Field(default=None, description="URL del backend de resultados de Celery")
+
     # === Prompt Caching ===
     USE_PROMPT_CACHE: bool = Field(
         default=True, description="Habilitar prompt caching para modelos Claude (ahorro 75% en costos)"

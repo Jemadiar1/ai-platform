@@ -36,18 +36,23 @@ from celery.utils.log import get_task_logger
 from sqlalchemy import select
 
 # Importar dependencias del proyecto
+from ai_platform.core.config import get_settings
 from ai_platform.database import session_factory
 from ai_platform.models.db import Task, UsageEvent
 
 logger = get_task_logger("ai_platform.task_runner")
 
+# Leer configuración de Celery desde Settings para producción
+_settings = get_settings()
+_broker_url = _settings.CELERY_BROKER_URL or "redis://localhost:6379/1"
+_result_backend = _settings.CELERY_RESULT_BACKEND or "redis://localhost:6379/2"
 
 # Crear la aplicación Celery
 # Usa Redis como broker (cola de mensajes) y backend (resultado)
 celery_app = Celery(
     "ai_platform_workers",
-    broker="redis://localhost:6379/1",  # Broker: donde se guardan las tareas
-    backend="redis://localhost:6379/2",  # Backend: donde se guardan los resultados
+    broker=_broker_url,  # Broker: donde se guardan las tareas
+    backend=_result_backend,  # Backend: donde se guardan los resultados
 )
 
 # Configurar Celery con opciones avanzadas
@@ -227,8 +232,30 @@ def process_task(self, task_id: str, module: str, payload: dict) -> dict:
         # Paso 4: Guardar resultado en la base de datos
         save_task_update(task_id, {"status": "completed", "result": result, "completed_at": datetime.now(UTC)})
 
-        # Paso 5: Registrar uso para billing
-        # TODO: Obtener tenant_id real de la tarea
+        # Paso 5: Obtener tenant_id real de la tarea para billing
+        tenant_id = "unknown"
+        try:
+            _session = session_factory()
+            try:
+                task_query = select(Task).where(Task.id == task_id)
+                task_obj = _session.execute(task_query).scalar_one_or_none()
+                if task_obj:
+                    tenant_id = str(task_obj.tenant_id)
+            finally:
+                _session.close()
+        except Exception:
+            logger.warning("No se pudo obtener tenant_id para la tarea %s", task_id)
+
+        # Paso 6: Registrar uso para billing (placeholder — tokens/cost se completarán en Fase 2)
+        save_usage_event(
+            tenant_id=tenant_id,
+            module=module,
+            event_type="task_execution",
+            tokens=0,
+            cost=0.0,
+            task_id=task_id,
+        )
+
         logger.info("task_completed", task_id=task_id, module=module)
         return result if isinstance(result, dict) else {"status": "ok", "data": result}
 

@@ -94,9 +94,10 @@ def create_task(
     db.flush()  # Flush para obtener el ID generado
     db.refresh(new_task)  # Refresh para obtener todos los campos
 
-    # TODO (Fase 2): Publicar en Redis/Celery
-    # from ai_platform.workers.task_runner import process_task
-    # process_task.delay(str(new_task.id), new_task.module, new_task.payload)
+    # Publicar en Celery para procesamiento async
+    from ai_platform.workers.task_runner import process_task
+
+    process_task.delay(str(new_task.id), new_task.module, new_task.payload)
 
     return TaskResponse.model_validate(new_task)
 

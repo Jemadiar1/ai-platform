@@ -146,7 +146,7 @@ def main():
         print("[6/6] Verificando...")
         time.sleep(5)
         run_remote(ssh, f"docker compose -f {REMOTE_PATH}/infra/docker/docker-compose.prod.yml ps")
-        run_remote(ssh, "curl -s http://localhost:4000/api/v1/health")
+        run_remote(ssh, "docker exec ai-platform-api curl -s http://localhost:4000/api/v1/health")
 
     finally:
         ssh.close()
