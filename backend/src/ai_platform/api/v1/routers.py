@@ -21,6 +21,7 @@ from fastapi import APIRouter
 from ai_platform.api.v1.documents import router as documents_router
 from ai_platform.api.v1.feedback import router as feedback_router
 from ai_platform.api.v1.kb import router as kb_router
+from ai_platform.api.v1.admin import router as admin_router
 from ai_platform.api.v1.odin import router as odin_router
 from ai_platform.api.v1.ping import router as ping_router
 from ai_platform.api.v1.reports import router as reports_router
@@ -31,6 +32,8 @@ from ai_platform.api.v1.webhooks import router as webhooks_router
 
 # Crear el router principal de la versión 1
 router = APIRouter()
+
+router.include_router(admin_router, prefix="/admin", tags=["admin"])
 
 # Incluir routers con prefijo
 router.include_router(ping_router)

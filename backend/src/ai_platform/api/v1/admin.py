@@ -86,9 +86,7 @@ def get_tenant_plan(tenant_id: str):
         if not tenant:
             raise HTTPException(status_code=404, detail="Tenant no encontrado")
 
-        agents = _session.execute(
-            select(TenantAgent).where(TenantAgent.tenant_id == tenant_id)
-        ).scalars().all()
+        agents = _session.execute(select(TenantAgent).where(TenantAgent.tenant_id == tenant_id)).scalars().all()
 
         return TenantPlanResponse(
             tenant_id=str(tenant.id),
