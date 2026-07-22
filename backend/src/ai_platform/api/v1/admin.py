@@ -187,7 +187,8 @@ def set_agent_access(tenant_id: str, request: SetAgentAccessRequest):
             )
             _session.add(record)
 
-        _session.flush()
+        _session.commit()
+        _session.refresh(record)
 
         return AgentAccessResponse(
             tenant_id=tenant_id,
