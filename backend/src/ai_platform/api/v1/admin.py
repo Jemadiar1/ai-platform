@@ -126,7 +126,8 @@ def set_tenant_plan(tenant_id: str, request: SetPlanRequest):
             raise HTTPException(status_code=404, detail="Tenant no encontrado")
 
         tenant.plan = request.plan
-        _session.flush()
+        _session.commit()
+        _session.refresh(tenant)
 
         agents = _session.execute(select(TenantAgent).where(TenantAgent.tenant_id == tenant_id)).scalars().all()
 
