@@ -42,6 +42,10 @@ services:
       # Redis (conectado a redis container)
       - REDIS_URL=redis://redis:6379/0
 
+      # Celery (broker y backend separados por DB)
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+
       # Seguridad
       - SECRET_KEY=${SECRET_KEY}
       - JWT_EXPIRATION_HOURS=24
