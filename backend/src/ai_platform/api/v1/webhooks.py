@@ -13,8 +13,6 @@ from typing import Any
 from fastapi import APIRouter, Request
 from sqlalchemy import text
 
-from ai_platform.models.db import Tenant
-
 router = APIRouter()
 
 

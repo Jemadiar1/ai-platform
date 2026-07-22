@@ -317,6 +317,42 @@ class Odin:
         # Tracking de budget
         await self.budget_tracker.begin_task(task_id, tenant_id, module)
 
+        # Verificar licencia del tenant para este agente
+        from ai_platform.middleware.licensing import check_agent_access
+
+        # Obtener plan del tenant desde la BD
+        from ai_platform.database import session_factory
+        from ai_platform.models.db import Tenant
+
+        tenant_session = session_factory()
+        try:
+            tenant_plan = "free"
+            tenant_record = tenant_session.execute(select(Tenant).where(Tenant.id == tenant_id)).scalar_one_or_none()
+            if tenant_record:
+                tenant_plan = tenant_record.plan
+        except Exception:
+            tenant_plan = "free"
+        finally:
+            tenant_session.close()
+
+        access = check_agent_access(tenant_id=tenant_id, agent_name=module, plan=tenant_plan)
+        if not access["allowed"]:
+            self.trajectory_manager.add_step(
+                session_id,
+                Step(
+                    step_type="error",
+                    module=module,
+                    error="Access denied: agent not licensed",
+                ),
+            )
+            self.trajectory_manager.complete_trajectory(session_id)
+            return {
+                "module": module,
+                "status": "error",
+                "error": "Acceso denegado",
+                "reason": access["reason"],
+            }
+
         # Inyectar contexto en la payload
         enriched_payload = self._enrich_payload(params, decision)
 

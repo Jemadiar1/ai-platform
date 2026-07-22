@@ -535,3 +535,37 @@ class KnowledgeBaseDocument(Base):
 
     def __repr__(self):
         return f"<KnowledgeBaseDocument(tenant={self.tenant_id}, title={self.title})>"
+
+
+class TenantAgent(Base):
+    """
+    Tabla: tenant_agents
+
+    Control de licenciamiento por agente.
+    Cada fila indica si un tenant tiene acceso a un agente específico.
+    El plan del tenant se mapea a un conjunto de agentes por defecto,
+    pero este registro permite overrides manuales (habilitar/deshabilitar,
+    revocar acceso temporal, etc.).
+
+    Reglas de acceso por plan (default):
+        free   → ai-connect
+        starter → ai-connect, ai-analytics
+        pro    → ai-connect, ai-analytics, ai-content, ai-social
+        enterprise → todos los agentes
+    """
+
+    __tablename__ = "tenant_agents"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id = Column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    agent_name = Column(String(50), nullable=False, doc="Nombre del agente: ai-connect, ai-analytics, etc.")
+    enabled = Column(Boolean, nullable=False, default=True, doc="Si el agente está habilitado para este tenant")
+    expires_at = Column(DateTime(timezone=True), nullable=True, doc="Fecha de expiración del acceso")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (UniqueConstraint("tenant_id", "agent_name", name="uq_tenant_agents_tenant_agent"),)
+
+    def __repr__(self):
+        return f"<TenantAgent(tenant={self.tenant_id}, agent={self.agent_name}, enabled={self.enabled})>"
