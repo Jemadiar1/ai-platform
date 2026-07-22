@@ -3,9 +3,6 @@
 Revision ID: 012
 Revises: 011
 Create Date: 2026-07-22
-
-Creates tenant_agents table for per-tenant agent licensing control.
-Each row represents whether a tenant has access to a specific agent.
 """
 from alembic import op
 import sqlalchemy as sa
@@ -30,7 +27,6 @@ def upgrade() -> None:
             "tenant_id",
             postgresql.UUID(as_uuid=True),
             nullable=False,
-            index=True,
         ),
         sa.Column(
             "agent_name",
@@ -65,12 +61,7 @@ def upgrade() -> None:
             nullable=False,
         ),
     )
-    op.create_index(
-        op.f("ix_tenant_agents_tenant_id"),
-        "tenant_agents",
-        ["tenant_id"],
-        unique=False,
-    )
+    op.create_index(op.f("ix_tenant_agents_tenant_id"), "tenant_agents", ["tenant_id"], unique=False)
     op.create_unique_constraint(
         "uq_tenant_agents_tenant_agent",
         "tenant_agents",
