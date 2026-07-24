@@ -32,13 +32,14 @@ settings = get_settings()
 ALLOWED_MIME_TYPES = {
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "image/png",
     "image/jpeg",
     "image/tiff",
     "image/bmp",
 }
 
-ALLOWED_EXTENSIONS = {".pdf", ".docx", ".png", ".jpg", ".jpeg", ".tiff", ".bmp"}
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".png", ".jpg", ".jpeg", ".tiff", ".bmp"}
 
 # Tamaño máximo: 100MB
 MAX_UPLOAD_SIZE = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
@@ -61,7 +62,7 @@ def _validate_mime_type(content_type: str | None) -> bool:
 
 @router.post("/upload", status_code=201)
 async def upload_document(
-    file: UploadFile = File(..., description="Archivo a subir (PDF, DOCX, PNG, JPG, TIFF)"),
+    file: UploadFile = File(..., description="Archivo a subir (PDF, DOCX, XLSX, PNG, JPG, TIFF)"),
     strategy: str = Query("hybrid", description="Estrategia de chunking: hybrid, semantic, fixed, page"),
     db: Session = Depends(get_db_session),
 ):
@@ -126,6 +127,61 @@ async def upload_document(
         "filename": file.filename,
         "size_bytes": len(content),
         "status_url": f"/api/v1/documents/{doc.id}",
+    }
+
+
+@router.post("/ocr")
+async def ocr_document(
+    file: UploadFile = File(..., description="Archivo imagen o PDF para OCR"),
+    db: Session = Depends(get_db_session),
+):
+    """
+    Ejecutar OCR en un archivo imagen o PDF escaneado.
+    Retorna el texto extraido inmediatamente (no asíncrono).
+    """
+    if not _validate_mime_type(file.content_type):
+        raise HTTPException(
+            status_code=400,
+            detail="Tipo MIME no soportado para OCR. Use PNG, JPG, TIFF, BMP o PDF.",
+        )
+
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Archivo demasiado grande. Máximo: {settings.MAX_UPLOAD_SIZE_MB}MB",
+        )
+
+    # Guardar archivo temporalmente
+    from ai_platform.services.document_storage import save_uploaded_file
+
+    file_name = save_uploaded_file(content, file.filename, "current-tenant")
+
+    # Disparar pipeline de OCR
+    doc = DocumentArtifact(
+        tenant_id=UUID("00000000-0000-0000-0000-000000000000"),
+        name=file.filename or "unknown",
+        mime_type=file.content_type or "application/octet-stream",
+        size_bytes=len(content),
+        file_path=file_name,
+        storage_backend="local",
+        status="extracting",
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+
+    from ai_platform.workers.document_pipeline import ingest_pipeline
+
+    ingest_pipeline.delay(str(doc.id), str(doc.tenant_id), strategy="fixed")
+
+    logger.info("ocr_document_uploaded", document_id=str(doc.id), filename=file.filename)
+
+    return {
+        "status": "uploaded_for_ocr",
+        "document_id": str(doc.id),
+        "filename": file.filename,
+        "processing_url": f"/api/v1/documents/{doc.id}",
     }
 
 
