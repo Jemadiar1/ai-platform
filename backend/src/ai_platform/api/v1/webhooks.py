@@ -8,6 +8,7 @@ al orquestador Odin, que decide qué módulo de negocio ejecutar.
 
 import json
 import logging
+import os
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -47,9 +48,20 @@ async def telegram_webhook(request: Request):
         logger.warning(f"Telegram webhook no validado: {validation.get('reason')}")
         return {"status": "rejected", "reason": validation.get("reason")}
 
-    # Extraer datos del mensaje
-    message = update_data.get("message", {})
-    text = message.get("text", "")
+    # Extraer datos del mensaje (soporta message, edited_message, channel_post)
+    message = (
+        update_data.get("message")
+        or update_data.get("edited_message")
+        or update_data.get("channel_post")
+    )
+    if not message:
+        return {"status": "ignored", "reason": "sin_mensaje"}
+
+    # Soporte para voice notes
+    voice = message.get("voice")
+    text = message.get("text", message.get("caption", ""))
+    if voice and not text:
+        text = f"[Mensaje de voz - {voice.get('file_size', 0)} bytes]"
     if not text:
         return {"status": "ignored", "reason": "mensaje_sin_texto"}
 
@@ -59,6 +71,7 @@ async def telegram_webhook(request: Request):
     user_id = str(user.get("id", ""))
     user_name = user.get("first_name", "unknown")
     chat_id = str(chat.get("id", ""))
+    reply_to_message_id = message.get("reply_to_message", {}).get("message_id")
 
     logger.info(f"Mensaje entrante Telegram: user={user_id}, text={text[:100]}")
 
@@ -68,6 +81,7 @@ async def telegram_webhook(request: Request):
         user_name=user_name,
         chat_id=chat_id,
         message_text=text,
+        reply_to_message_id=reply_to_message_id,
     )
 
 
@@ -157,35 +171,56 @@ async def discord_webhook(request: Request):
     from ai_platform.channels.discord import DiscordChannel
 
     logger = logging.getLogger(__name__)
-    payload = await request.body()
+    payload_bytes = await request.body()
+    payload_bytes = payload_bytes.strip()
+
+    try:
+        import json
+        payload = json.loads(payload_bytes)
+    except json.JSONDecodeError:
+        logger.warning("Discord webhook body no es JSON válido")
+        return {"status": "rejected", "reason": "invalid_json"}
 
     channel = DiscordChannel()
 
-    # Validar webhook de Discord
+    # Validar webhook de Discord (pasar dict, no bytes)
     validation = await channel.validate_webhook(payload, dict(request.headers))
+
+    # Type 1: challenge de verificación — responder inmediatamente
+    if validation.get("response"):
+        return validation["response"]
+
     if not validation.get("valid"):
         logger.warning(f"Discord webhook no validado: {validation.get('reason')}")
         return {"status": "rejected", "reason": validation.get("reason")}
 
-    import json
+    # Extraer channel_id temprano para validación de permisos
+    message = payload.get("message", {})
+    data = payload.get("data", {})
+    channel_id_raw = payload.get("channel_id", message.get("channel_id", ""))
 
-    update_data = json.loads(payload)
+    # Validar canal permitido
+    allowed_channels = [
+        cid.strip()
+        for cid in os.environ.get("ALLOWED_DISCORD_CHANNELS", "").split(",")
+        if cid.strip()
+    ]
+    if allowed_channels and str(channel_id_raw) not in allowed_channels:
+        logger.warning(f"Ignorando interacción de canal no autorizado: {channel_id_raw}")
+        return {"status": "ignored", "reason": "channel_not_allowed"}
 
     # Extraer usuario y mensaje según tipo de interacción
-    user = update_data.get("member", {}).get("user", update_data.get("user", {}))
-    message = update_data.get("message", {})
-    data = update_data.get("data", {})
+    user = payload.get("member", {}).get("user", payload.get("user", {}))
 
     user_id = str(user.get("id", ""))
     user_name = user.get("username", user.get("global_name", "unknown"))
-    chat_id = str(update_data.get("channel_id", message.get("channel_id", "")))
+    chat_id = str(channel_id_raw)
 
     # Obtener texto del mensaje/interacción
     if data.get("options"):
-        # Slash command con opciones
         message_text = data["options"][0].get("value", "") or data.get("content", "")
     else:
-        message_text = update_data.get("content", "") or data.get("content", "")
+        message_text = payload.get("content", "") or data.get("content", "")
 
     if not message_text:
         return {"status": "ignored", "reason": "no_content"}
@@ -344,6 +379,13 @@ async def _process_channel_message(
     action = decision["action"]
     params = decision.get("params", {})
 
+    # DEBUG LOG
+    logger.info("=" * 60)
+    logger.info(f"ODIN DECISION: module={module_name!r}, action={action!r}, confidence={decision.get('confidence')}")
+    logger.info(f"ODIN DECISION: message={message_text[:150]!r}")
+    logger.info(f"ODIN DECISION: channel={channel}, chat_id={chat_id}")
+    logger.info("=" * 60)
+
     # Paso 3: Actualizar session_id en channel_mappings para reutilización futura
     if session_id and mapping:
         with make_session() as db:
@@ -387,8 +429,16 @@ async def _process_channel_message(
             "module": module_name,
         }
 
+    logger.info(f"MODULE_RESULT keys: {list(module_result.keys())}")
+    logger.info(f"MODULE_RESULT['response']: {str(module_result.get('response', '<absent>'))[:100]}")
+    logger.info(f"MODULE_RESULT['result']: {str(module_result.get('result', '<absent>'))[:100]}")
+    logger.info(f"MODULE_RESULT['module']: {str(module_result.get('module', '<absent>'))[:50]}")
+
     # Paso 5: Enviar respuesta de vuelta al canal
     response_text = _extract_response_text(module_result)
+
+    logger.info(f"EXTRACTED RESPONSE: {response_text[:300] if response_text else '(EMPTY)'}")
+
     if response_text:
         await _send_to_channel(channel, chat_id, response_text)
 
@@ -472,14 +522,13 @@ def _extract_response_text(module_result: Any) -> str:
         # Si hay cualquier campo con string, usar el primero (excluyendo metadata)
         for key, val in module_result.items():
             if isinstance(val, str) and val.strip():
-                if key not in _STATUS_STRINGS and val not in _STATUS_STRINGS:
+                if key not in _METADATA_KEYS and val not in _STATUS_STRINGS:
                     return val[:4096]
         if "error" in module_result:
             return str(module_result["error"])
     elif isinstance(module_result, str) and module_result.strip():
         if module_result not in _STATUS_STRINGS:
             return module_result[:4096]
-    return ""
     return ""
 
 

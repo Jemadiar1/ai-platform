@@ -67,11 +67,15 @@ class Settings(BaseSettings):
     # === NaN Builders (Custom GPU) ===
     NAN_API_KEY: str | None = None
     NAN_API_URL: str = Field(default="https://api.nan.builders/v1")
+    EMBEDDING_API_URL: str = Field(default="https://api.nan.builders/v1", description="URL de la API de embeddings NAN")
     EMBEDDING_MODEL: str = Field(default="qwen3-embedding", description="Modelo de embedding para vectorización")
     EMBEDDING_DIMENSION: int = Field(default=4096, description="Dimensión del vector de embedding")
 
     # === LLM Selection ===
-    LLM_PROVIDER: str = Field(default="nan")  # nan
+    LLM_PROVIDER: str = Field(default="nan", description="Proveedor de LLM (nan)")
+    PRIMARY_MODEL: str = Field(default="qwen3.6", description="Modelo primario LLM")
+    FAST_MODEL: str = Field(default="qwen3.6", description="Modelo rápido para tareas simples")
+    FALLBACK_MODEL: str = Field(default="qwen3.6", description="Modelo de respaldo")
 
     # === WhatsApp API ===
     WHATSAPP_PHONE_NUMBER_ID: str | None = None
@@ -87,6 +91,7 @@ class Settings(BaseSettings):
     # === Discord API ===
     DISCORD_BOT_TOKEN: str | None = None
     DISCORD_CHANNEL_ID: str | None = None
+    DISCORD_PUBLIC_KEY: str | None = None
 
     # === Logging ===
     LOG_LEVEL: str = Field(default="INFO")

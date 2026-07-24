@@ -11,6 +11,7 @@ Configuración:
 
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -172,21 +173,14 @@ class TelegramChannel(BaseChannel):
         text: str,
         parse_mode: str = "HTML",
         reply_markup: dict | None = None,
+        reply_to_message_id: int | None = None,
     ) -> Any:
         """
-        Enviar mensaje a un chat de Telegram.
+        Enviar mensaje a un chat de Telegram con retry automático.
 
         Usa la API sendMessage de Telegram.
         Soporta parse_mode HTML y reply_markup para botones interactivos.
-
-        Parámetros:
-            chat_id: ID del chat de Telegram
-            text: Contenido del mensaje
-            parse_mode: Formato de texto ("HTML" o "MarkdownV2")
-            reply_markup: Botones del bot (KeyboardMarkup/InlineKeyboardMarkup)
-
-        Retorna:
-            Dict con resultado de la API (message_id, etc.)
+        Implementa retry con backoff exponencial para errores de Telegram.
         """
         if not self.token:
             logger.error("No se puede enviar mensaje: TELEGRAM_BOT_TOKEN no configurado")
@@ -207,28 +201,59 @@ class TelegramChannel(BaseChannel):
         if reply_markup:
             payload["reply_markup"] = reply_markup
 
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(url, json=payload)
-                response.raise_for_status()
-                data = response.json()
+        if reply_to_message_id:
+            payload["reply_to_message_id"] = reply_to_message_id
 
-                if data.get("ok"):
-                    logger.info(f"Mensaje enviado a Telegram chat_id={chat_id}")
-                    return data
-                else:
-                    logger.error(f"Error enviando a Telegram: {data}")
-                    return {"status": "error", "message": data.get("description", "Error desconocido")}
+        last_error = None
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    response = await client.post(url, json=payload)
+                    response.raise_for_status()
+                    data = response.json()
 
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error enviando mensaje a Telegram: {e.response.status_code} - {e.response.text}")
-            return {"status": "error", "message": f"HTTP {e.response.status_code}"}
-        except httpx.RequestError as e:
-            logger.error(f"Error de red enviando mensaje a Telegram: {e}")
-            return {"status": "error", "message": "Error de red"}
-        except Exception as e:
-            logger.error(f"Error inesperado enviando mensaje a Telegram: {e}")
-            return {"status": "error", "message": str(e)}
+                    if data.get("ok"):
+                        logger.info(f"Mensaje enviado a Telegram chat_id={chat_id}")
+                        return data
+                    else:
+                        error_desc = data.get("description", "Error desconocido")
+                        error_code = data.get("error_code")
+                        if error_code == 429:
+                            retry_after = data.get("retry_after", 5)
+                            logger.warning(f"Rate limited por Telegram. Esperando {retry_after}s (intento {attempt+1}/3)")
+                            await asyncio.sleep(retry_after)
+                            continue
+                        logger.error(f"Error enviando a Telegram: {error_desc}")
+                        return {"status": "error", "message": error_desc}
+
+            except httpx.HTTPStatusError as e:
+                last_error = e
+                if e.response.status_code == 429:
+                    try:
+                        retry_after = e.response.json().get("retry_after", 5)
+                    except Exception:
+                        retry_after = 5
+                    logger.warning(f"Rate limited HTTP. Esperando {retry_after}s (intento {attempt+1}/3)")
+                    await asyncio.sleep(retry_after)
+                    continue
+                logger.error(f"HTTP error enviando mensaje a Telegram: {e.response.status_code} - {e.response.text}")
+                return {"status": "error", "message": f"HTTP {e.response.status_code}"}
+            except httpx.ReadTimeout:
+                last_error = last_error or Exception("ReadTimeout")
+                wait = 2 ** attempt
+                logger.warning(f"Timeout en Telegram. Reintentando en {wait}s (intento {attempt+1}/3)")
+                await asyncio.sleep(wait)
+            except httpx.RequestError as e:
+                last_error = e
+                logger.warning(f"Error de red. Reintentando (intento {attempt+1}/3)")
+                await asyncio.sleep(2 ** attempt)
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Error inesperado. Reintentando (intento {attempt+1}/3)")
+                await asyncio.sleep(2 ** attempt)
+
+        logger.error(f"Error enviando mensaje a Telegram tras 3 intentos: {last_error}")
+        return {"status": "error", "message": f"Error tras 3 intentos: {last_error}"}
 
     async def send_answer(
         self,
