@@ -247,6 +247,7 @@ async def _process_channel_message(
     user_name: str,
     chat_id: str,
     message_text: str,
+    reply_to_message_id: int | None = None,
 ) -> dict[str, Any]:
     """
     Procesar mensaje de cualquier canal de forma unificada.
@@ -457,7 +458,7 @@ async def _send_channel_error(channel: str, chat_id: str | None, error_message: 
     await _send_to_channel(channel, chat_id, error_message)
 
 
-async def _send_to_channel(channel: str, chat_id: str | None, text: str) -> None:
+async def _send_to_channel(channel: str, chat_id: str | None, text: str, reply_to_message_id: int | None = None) -> None:
     """Enviar texto al canal apropiado usando el channel manager."""
     from ai_platform.channels import DiscordChannel, TelegramChannel, WhatsAppChannel
 
@@ -476,7 +477,7 @@ async def _send_to_channel(channel: str, chat_id: str | None, text: str) -> None
 
     try:
         channel_instance = channel_instance_factory()
-        await channel_instance.send_message(chat_id=chat_id, text=text)
+        await channel_instance.send_message(chat_id=chat_id, text=text, reply_to_message_id=reply_to_message_id)
     except Exception as e:
         logging.getLogger(__name__).error(f"Error enviando al canal {channel}: {e}")
 

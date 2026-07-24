@@ -734,7 +734,7 @@ class LLMClient:
                                 "content": f"Eres un asistente de marketing digital de NeuralCrew Labs, una agencia 100% potenciada por IA. Responde de forma útil, concisa y profesional en español. Usuario: {prompt}",
                             },
                         ],
-                        "max_tokens": 1024,
+                        "max_tokens": 4096,
                         "temperature": 0.7,
                     },
                 )
@@ -742,11 +742,23 @@ class LLMClient:
                 if response.status_code == 200:
                     data = response.json()
                     if "choices" in data and len(data["choices"]) > 0:
-                        content = data["choices"][0].get("message", {}).get("content", "")
+                        choice = data["choices"][0]
+                        finish_reason = choice.get("finish_reason", "")
+                        content = choice.get("message", {}).get("content", "")
+
+                        if finish_reason == "length":
+                            logger.warning(
+                                f"Chat LLM response truncated (finish_reason=length), "
+                                f"consider increasing max_tokens. Prompt length: {len(prompt)} chars"
+                            )
+                            return {"content": content.strip(), "model": model, "_truncated": True}
+
+                        if content and content.strip():
+                            return {"content": content.strip(), "model": model}
                     else:
                         content = data.get("content", "")
-                    if content and content.strip():
-                        return {"content": content.strip(), "model": model}
+                        if content and content.strip():
+                            return {"content": content.strip(), "model": model}
 
                 logger.warning(f"Chat LLM failed with status {response.status_code}: {response.text[:200]}")
                 return {

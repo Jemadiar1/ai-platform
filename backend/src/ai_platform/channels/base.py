@@ -152,8 +152,9 @@ class BaseChannel:
             Dict con resultado del procesamiento
         """
         # Paso 1: Validar webhook
-        if not await self.validate_webhook(raw_payload):
-            logger.warning(f"Webhook inválido para canal {self.channel}")
+        validation = await self.validate_webhook(raw_payload)
+        if not validation.get("valid"):
+            logger.warning(f"Webhook inválido para canal {self.channel}: {validation.get('reason')}")
             return {"status": "error", "message": "Webhook no validado"}
 
         # Paso 2: Extraer mensaje del payload

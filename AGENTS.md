@@ -562,3 +562,104 @@ comportamiento, contratos, comandos, despliegue ni arquitectura observable.
   referencias de archivo/línea.
 - Si el usuario pide implementación, implementa y verifica dentro del alcance
   razonable antes de cerrar.
+
+## Despliegue Y Comunicación Con VPS (CRÍTICO)
+
+### Contexto del Entorno
+
+El workspace corre en Windows con path `C:\Users\Jesús Díaz\...` que contiene:
+- Espacio (` `) entre "Jesús" y "Díaz"
+- Caracteres Unicode (`ú`, `í`)
+
+Esto rompe múltiples capas de abstracción. La infraestructura productiva está en:
+- **VPS:** `147.93.3.250` (root), path app: `/opt/ai-platform/`
+- **Container:** `ai-platform-api`, ruta interna: `/app/src/ai_platform/...`
+- **Docker-compose prod:** `infra/docker/docker-compose.prod.yml`
+
+### Patrones de Deploy Correctos
+
+El deploy usa **paramiko** (SFTP) para transferir archivos locales al VPS,
+luego `docker cp` desde VPS al container. **Nunca** usar `docker --context`
+directamente ni pipes stdin via SSH.
+
+**Patrón correcto (3 pasos):**
+
+```python
+import paramiko
+
+# 1. SFTP → VPS HOST path (NUNCА container path!)
+sftp.put(windows_local_path, "/opt/ai-platform/backend/src/ai_platform/...")
+
+# 2. SSH exec → docker cp al container
+ssh.exec_command(
+    "docker cp /opt/ai-platform/... ai-platform-api:/app/src/ai_platform/..."
+)
+
+# 3. SSH exec → compile check (¡usar python3 en container!)
+ssh.exec_command(
+    "docker exec ai-platform-api python3 -m py_compile /app/src/ai_platform/..."
+)
+```
+
+### Errores Críticos Evitar En
+
+#### ❌ `docker --context ai-platform cp win_path container:path`
+Se cuelga indefinidamente (timeout >120s). El contexto SSH de Docker tiene
+conflictos con `sshpass` y los paths Unicode.
+
+#### ❌ `stdin.channel.send(data)` con paramiko
+Se cuelga porque el servidor remote no cierra el stdin del pipe.
+**Solución:** escribir archivo local → SFTP `put()` → nunca pipe.
+
+#### ❌ Inyectar código Python dentro de comillas bash/SSH
+```
+ssh.exec_command('docker exec -c "python3 -c \'print("hola")\'"')
+# FAIL: bash interpreta `print( ` como sintaxis inesperada
+```
+**Solución:** escribir script Python a archivo → ejecutar `python3 archivo.py`.
+
+#### ❌ Base64 inline con >5KB
+```
+echo 'BASE64DE10KB...' | base64 -d > file.py
+# FAIL: "La línea de comandos es demasiado larga"
+# El límite de cmdline de Windows (~32KB) se agota rápido con base64
+```
+**Solución:** base64 en archivo local → SCP al VPS → `base64 -d < /tmp/f | bash`.
+
+#### ❌ Escribir vía SFTP a path del container
+```
+sftp.put(win_path, "/app/src/ai_platform/handler.py")  
+# FAIL: [Errno 2] No such file
+# SFTP opera en el HOST remoto, no en el container
+```
+**Solución:** SFTP a `/opt/ai-platform/...` → `docker cp` → `docker exec`.
+
+#### ❌ Usar `python` en container (usar `python3`)
+```
+docker exec container python -m py_compile ...
+# FAIL: command not found
+```
+
+#### ❌ Comandos inline SSH con metacaracteres
+PowerShell interpreta `"`, `|`, `<`, `>`, `&` como metacaracteres cuando
+hay espacios en el path local. **Solución:** usar comillas simples para SSH,
+o `paramiko` para archivos grandes.
+
+### Rutas Clave De Referencia
+
+| Entorno | RUTA |
+|---------|------|
+| Windows local | `C:\Users\Jesús Díaz\Documents\AI-Platform\backend\src\ai_platform\` |
+| VPS host | `/opt/ai-platform/backend/src/ai_platform/` |
+| Container | `/app/src/ai_platform/` |
+
+### Checklist Pre-Deploy
+
+1. Verificar paths en código no usan variables de entorno del usuario
+2. Preferir `paramiko` para archivos >5KB (evita límites de CLI)
+3. `docker cp` → host_path first, then target container_path
+4. `python3`, nunca `python`, dentro del container
+5. Scripts Python escritos a disco, nunca inyectados como strings
+
+> **Regla de oro:** si una línea de comando SSH tiene `echo`, `|`, `&&`, `;`,
+> `"`, `$` o supera 500 chars, usar `paramiko` + `write to file` en su lugar.

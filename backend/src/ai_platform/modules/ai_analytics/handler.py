@@ -4,14 +4,14 @@ Handler para el módulo ai-analytics.
 Ejecuta acciones de analítica, investigación web, OCR, reportes e
 ingestión de documentos. Cada acción delega en un servicio productivo
 existente (web_research_service, report_renderer, vision_ocr,
-document_chunker, document_storage).
+document_chunker, document_storage, embedding_service).
 
 Las acciones se dividen en:
 
 - Investigación: web_research, web_fetch, web_browser
 - Reportes: generate_report, render_report
 - OCR: ocr_extract, chart_detect
-- Documentos: document_ingest, document_chunk
+- Documentos: document_ingest, document_chunk, document_fts_search
 - Fallback: default (conversacional con LLM)
 
 """
@@ -38,6 +38,7 @@ class Handler:
         - chart_detect: detección de gráficos en imágenes
         - document_ingest: subir y procesar documentos
         - document_chunk: dividir documentos en chunks
+        - document_fts_search: buscar texto completo en documentos indexados
         - default: fallback conversacional con LLM
     """
 
@@ -68,6 +69,7 @@ class Handler:
             "chart_detect": self._chart_detect,
             "document_ingest": self._document_ingest,
             "document_chunk": self._document_chunk,
+            "document_fts_search": self._document_fts_search,
             "default": self._default,
         }
 
@@ -77,7 +79,7 @@ class Handler:
                 "action": action,
                 "status": "failed",
                 "error": f"Acción '{action}' no encontrada en ai-analytics",
-                "note": "Acciones disponibles: web_research, web_fetch, web_browser, generate_report, render_report, ocr_extract, chart_detect, document_ingest, document_chunk, default",
+                "note": "Acciones disponibles: web_research, web_fetch, web_browser, generate_report, render_report, ocr_extract, chart_detect, document_ingest, document_chunk, document_fts_search, default",
                 "timestamp": datetime.utcnow().isoformat(),
             }
 
@@ -114,7 +116,7 @@ class Handler:
         try:
             loop = asyncio.new_event_loop()
             try:
-                research_result = loop.run_until_complete(
+                research_results = loop.run_until_complete(
                     web_research_service.fetch_search(
                         query=query,
                         tenant_id=tenant_id,
@@ -122,12 +124,12 @@ class Handler:
                     )
                 )
 
-                sources = research_result.get("results", [])
+                sources = research_results or []
                 summary_parts = []
                 for i, source in enumerate(sources[:5], 1):
-                    title = source.get("title", "Sin título")
-                    snippet = source.get("snippet", "")
-                    url = source.get("url", "")
+                    title = source.title if hasattr(source, "title") else source.get("title", "Sin título")
+                    snippet = source.content[:300] if hasattr(source, "content") else source.get("content", "")[:300]
+                    url = source.url if hasattr(source, "url") else source.get("url", "")
                     summary_parts.append(f"{i}. {title} — {snippet} ({url})")
 
                 summary = "\n\n".join(summary_parts)
@@ -172,16 +174,24 @@ class Handler:
                     )
                 )
 
-                content = fetch_result.get("content", "")
-                title = fetch_result.get("title", "Sin título")
+                content = fetch_result.content if hasattr(fetch_result, "content") else fetch_result.get("content", "")
+                title = (
+                    fetch_result.title if hasattr(fetch_result, "title") else fetch_result.get("title", "Sin título")
+                )
                 if len(content) > 4000:
                     content = content[:4000] + "... [truncado]"
+
+                status_code = None
+                if hasattr(fetch_result, "status_code"):
+                    status_code = fetch_result.status_code
+                elif isinstance(fetch_result, dict):
+                    status_code = fetch_result.get("status_code")
 
                 return {
                     "status": "success",
                     "response": f"## {title}\n\n{content}",
                     "source_url": url,
-                    "status_code": fetch_result.get("status_code"),
+                    "status_code": status_code,
                 }
             finally:
                 loop.close()
@@ -216,16 +226,28 @@ class Handler:
                     )
                 )
 
-                content = browser_result.get("content", "")
-                title = browser_result.get("title", "Sin título")
-                if len(content) > 4000:
+                content = (
+                    browser_result.content if hasattr(browser_result, "content") else browser_result.get("content", "")
+                )
+                title = (
+                    browser_result.page_title
+                    if hasattr(browser_result, "page_title")
+                    else browser_result.get("title", "Sin título")
+                )
+                if content and len(content) > 4000:
                     content = content[:4000] + "... [truncado]"
+
+                screenshot = None
+                if hasattr(browser_result, "screenshot_base64"):
+                    screenshot = browser_result.screenshot_base64
+                elif isinstance(browser_result, dict):
+                    screenshot = browser_result.get("screenshot")
 
                 return {
                     "status": "success",
-                    "response": f"## {title}\n\n{content}",
+                    "response": f"## {title}\n\n{content}" if content else f"## {title}",
                     "source_url": url,
-                    "screenshot": browser_result.get("screenshot"),
+                    "screenshot": screenshot,
                 }
             finally:
                 loop.close()
@@ -242,7 +264,12 @@ class Handler:
 
     def _generate_report(self, params: dict, metadata: dict, tenant_id: str) -> dict:
         """Generar reporte analítico con datos de múltiples fuentes."""
-        from ai_platform.services.report_models import BrandTheme, ReportSpec
+        from ai_platform.services.report_models import (
+            BrandTheme,
+            ReportFormat,
+            ReportSpec,
+            Section,
+        )
         from ai_platform.services.report_renderer import ReportRendererService
 
         report_spec = params.get("report_spec", {})
@@ -263,14 +290,14 @@ class Handler:
             )
 
             sections_data = report_spec.get("sections", [])
-            sections = []
-            for s in sections_data:
-                section = {
-                    "id": s.get("id", ""),
-                    "title": s.get("title", ""),
-                    "content": s.get("content", ""),
-                }
-                sections.append(section)
+            sections = [
+                Section(
+                    id=s.get("id", ""),
+                    title=s.get("title", ""),
+                    content=s.get("content", ""),
+                )
+                for s in sections_data
+            ]
 
             report_spec_obj = ReportSpec(
                 title=report_spec.get("title", "Reporte"),
@@ -280,7 +307,8 @@ class Handler:
             )
 
             renderer = ReportRendererService()
-            outputs = renderer.render(tenant_id, report_spec_obj, formats=["html", "pdf"])
+            formats = [ReportFormat.HTML, ReportFormat.PDF]
+            outputs = renderer.render(tenant_id, report_spec_obj, formats=formats)
 
             return {
                 "status": "success",
@@ -297,11 +325,16 @@ class Handler:
 
     def _render_report(self, params: dict, metadata: dict, tenant_id: str) -> dict:
         """Renderizar reportes en múltiples formatos (PDF, DOCX, XLSX, CSV)."""
-        from ai_platform.services.report_models import BrandTheme, ReportSpec
+        from ai_platform.services.report_models import (
+            BrandTheme,
+            ReportFormat,
+            ReportSpec,
+            Section,
+        )
         from ai_platform.services.report_renderer import ReportRendererService
 
         report_spec = params.get("report_spec", {})
-        formats = params.get("formats", ["html", "pdf", "docx", "xlsx"])
+        format_strings = params.get("formats", ["html", "pdf", "docx", "xlsx"])
 
         if not report_spec:
             return {
@@ -311,6 +344,18 @@ class Handler:
             }
 
         try:
+            # Convert string format names to ReportFormat enum values
+            format_map = {
+                "html": ReportFormat.HTML,
+                "pdf": ReportFormat.PDF,
+                "docx": ReportFormat.DOCX,
+                "xlsx": ReportFormat.XLSX,
+                "csv": ReportFormat.CSV,
+            }
+            formats = [format_map[f] for f in format_strings if f in format_map]
+            if not formats:
+                formats = [ReportFormat.HTML, ReportFormat.PDF]
+
             theme_data = report_spec.get("theme", {})
             theme = BrandTheme(
                 primary_color=theme_data.get("primary_color", "#1a73e8"),
@@ -320,14 +365,14 @@ class Handler:
             )
 
             sections_data = report_spec.get("sections", [])
-            sections = []
-            for s in sections_data:
-                section = {
-                    "id": s.get("id", ""),
-                    "title": s.get("title", ""),
-                    "content": s.get("content", ""),
-                }
-                sections.append(section)
+            sections = [
+                Section(
+                    id=s.get("id", ""),
+                    title=s.get("title", ""),
+                    content=s.get("content", ""),
+                )
+                for s in sections_data
+            ]
 
             report_spec_obj = ReportSpec(
                 title=report_spec.get("title", "Reporte"),
@@ -358,10 +403,26 @@ class Handler:
 
     def _ocr_extract(self, params: dict, metadata: dict, tenant_id: str) -> dict:
         """Extracción de texto OCR de imágenes y documentos escaneados."""
-        from ai_platform.services.vision_ocr import analyze
+        from ai_platform.services.vision_ocr import VisionOCRService
 
-        image_data = params.get("image_data", "")
+        image_data = params.get("image_data", b"")
         if not image_data:
+            # Try base64 encoded image
+            b64_data = params.get("image_base64", "")
+            if b64_data:
+                import base64
+
+                try:
+                    image_data = base64.b64decode(b64_data)
+                except Exception:
+                    image_data = b""
+            elif isinstance(params.get("image_data"), str) and len(params["image_data"]) > 10:
+                try:
+                    image_data = params["image_data"].encode("utf-8")
+                except Exception:
+                    image_data = b""
+
+        if not image_data or (isinstance(image_data, str) and len(image_data) < 10):
             return {
                 "status": "failed",
                 "response": "Se requieren datos de imagen para OCR",
@@ -369,26 +430,24 @@ class Handler:
             }
 
         try:
-            loop = asyncio.new_event_loop()
-            try:
-                ocr_result = loop.run_until_complete(
-                    analyze(
-                        image_data=image_data,
-                        tenant_id=tenant_id,
-                        source_format=params.get("source_format", "image"),
-                    )
-                )
+            # VisionOCRService.analyze() is synchronous, no event loop needed
+            service = VisionOCRService()
+            ocr_result = service.analyze(
+                tenant_id=tenant_id,
+                image_bytes=image_data if isinstance(image_data, bytes) else image_data.encode("utf-8"),
+                filename=params.get("filename"),
+                include_charts=True,
+            )
 
-                return {
-                    "status": "success",
-                    "response": ocr_result.text if ocr_result else "No se extrajo texto de la imagen",
-                    "confidence": ocr_result.overall_confidence if ocr_result else 0,
-                    "engine_used": ocr_result.engine_used if ocr_result else "unknown",
-                    "charts_found": len(ocr_result.charts) if ocr_result else 0,
-                    "warnings": ocr_result.warnings if ocr_result else [],
-                }
-            finally:
-                loop.close()
+            return {
+                "status": "success",
+                "response": ocr_result.text if ocr_result else "No se extrajo texto de la imagen",
+                "confidence": ocr_result.confidence if ocr_result else 0,
+                "engine": ocr_result.engine if ocr_result else "unknown",
+                "charts_found": len(ocr_result.charts) if ocr_result else 0,
+                "warnings": ocr_result.warnings if ocr_result else [],
+                "storage_id": ocr_result.storage_id if ocr_result else None,
+            }
         except Exception as e:
             return {
                 "status": "failed",
@@ -398,10 +457,26 @@ class Handler:
 
     def _chart_detect(self, params: dict, metadata: dict, tenant_id: str) -> dict:
         """Detección y análisis de gráficos/charts en imágenes."""
-        from ai_platform.services.vision_ocr import analyze
+        from ai_platform.services.vision_ocr import VisionOCRService
 
-        image_data = params.get("image_data", "")
+        image_data = params.get("image_data", b"")
         if not image_data:
+            # Try base64 encoded image
+            b64_data = params.get("image_base64", "")
+            if b64_data:
+                import base64
+
+                try:
+                    image_data = base64.b64decode(b64_data)
+                except Exception:
+                    image_data = b""
+            elif isinstance(params.get("image_data"), str) and len(params["image_data"]) > 10:
+                try:
+                    image_data = params["image_data"].encode("utf-8")
+                except Exception:
+                    image_data = b""
+
+        if not image_data or (isinstance(image_data, str) and len(image_data) < 10):
             return {
                 "status": "failed",
                 "response": "Se requieren datos de imagen para detectar gráficos",
@@ -409,29 +484,26 @@ class Handler:
             }
 
         try:
-            loop = asyncio.new_event_loop()
-            try:
-                ocr_result = loop.run_until_complete(
-                    analyze(
-                        image_data=image_data,
-                        tenant_id=tenant_id,
-                        source_format=params.get("source_format", "image"),
-                    )
-                )
+            # VisionOCRService.analyze() is synchronous, no event loop needed
+            service = VisionOCRService()
+            ocr_result = service.analyze(
+                tenant_id=tenant_id,
+                image_bytes=image_data if isinstance(image_data, bytes) else image_data.encode("utf-8"),
+                filename=params.get("filename"),
+                include_charts=True,
+            )
 
-                charts = ocr_result.charts if ocr_result else []
-                chart_summary = ""
-                for i, chart in enumerate(charts[:5], 1):
-                    chart_summary += f"{i}. {chart.get('title', 'Sin título')} — {chart.get('description', '')}\n"
+            charts = ocr_result.charts if ocr_result else []
+            chart_summary = ""
+            for i, chart in enumerate(charts[:5], 1):
+                chart_summary += f"{i}. {chart.get('title', 'Sin título')} — {chart.get('description', '')}\n"
 
-                return {
-                    "status": "success",
-                    "response": chart_summary if chart_summary else "No se detectaron gráficos en la imagen",
-                    "chart_count": len(charts),
-                    "charts": charts,
-                }
-            finally:
-                loop.close()
+            return {
+                "status": "success",
+                "response": chart_summary if chart_summary else "No se detectaron gráficos en la imagen",
+                "chart_count": len(charts),
+                "charts": charts,
+            }
         except Exception as e:
             return {
                 "status": "failed",
@@ -451,6 +523,17 @@ class Handler:
         original_filename = params.get("original_filename", "document")
 
         if not file_bytes:
+            # Try base64 encoded file
+            b64_data = params.get("file_base64", "")
+            if b64_data:
+                import base64
+
+                try:
+                    file_bytes = base64.b64decode(b64_data)
+                except Exception:
+                    file_bytes = b""
+
+        if not file_bytes or (isinstance(file_bytes, str) and len(file_bytes) < 10):
             return {
                 "status": "failed",
                 "response": "Se requiere contenido de archivo para ingest",
@@ -459,7 +542,7 @@ class Handler:
 
         try:
             file_path = save_uploaded_file(
-                file_bytes=file_bytes,
+                file_bytes=file_bytes if isinstance(file_bytes, bytes) else file_bytes.encode("utf-8"),
                 original_filename=original_filename,
                 tenant_id=tenant_id,
             )
@@ -468,7 +551,7 @@ class Handler:
                 "status": "success",
                 "response": f"Documento '{original_filename}' guardado exitosamente",
                 "file_path": file_path,
-                "size_bytes": len(file_bytes),
+                "size_bytes": len(file_bytes) if isinstance(file_bytes, bytes) else len(file_bytes.encode("utf-8")),
             }
         except Exception as e:
             return {
@@ -514,6 +597,81 @@ class Handler:
             return {
                 "status": "failed",
                 "response": f"Error chunking: {e}",
+                "error": str(e),
+            }
+
+    def _document_fts_search(self, params: dict, metadata: dict, tenant_id: str) -> dict:
+        """Buscar texto completo en documentos indexados usando embeddings o FTS."""
+        from sqlalchemy import select
+
+        from ai_platform.database import make_session
+        from ai_platform.models.db import DocumentChunk
+
+        query = params.get("query", "")
+        if not query:
+            return {
+                "status": "failed",
+                "response": "Se requiere un query de búsqueda",
+                "error": "query no proporcionado",
+            }
+
+        try:
+            results = []
+            with make_session() as db:
+                stmt = (
+                    select(DocumentChunk)
+                    .where(DocumentChunk.tenant_id == tenant_id, DocumentChunk.content.ilike(f"%{query}%"))
+                    .order_by(DocumentChunk.chunk_index)
+                    .limit(20)
+                )
+                chunks = db.execute(stmt).scalars().all()
+
+                for chunk in chunks:
+                    highlight = chunk.content
+                    idx = highlight.lower().find(query.lower())
+                    if idx >= 0:
+                        start = max(0, idx - 100)
+                        end = min(len(highlight), idx + len(query) + 100)
+                        highlight = (
+                            ("..." if start > 0 else "")
+                            + highlight[start:end]
+                            + ("..." if end < len(highlight) else "")
+                        )
+                    results.append(
+                        {
+                            "text": highlight,
+                            "chunk_index": chunk.chunk_index,
+                            "level": chunk.level,
+                            "chunk_type": chunk.chunk_type,
+                        }
+                    )
+
+            if not results:
+                return {
+                    "status": "success",
+                    "response": "No se encontraron documentos relevantes para la búsqueda.",
+                    "query": query,
+                    "results": [],
+                }
+
+            response_parts = []
+            for i, r in enumerate(results[:5], 1):
+                response_parts.append(
+                    f"{i}. Chunk #{r['chunk_index']} (nível {r['level']}, {r['chunk_type']}):\n{r['text']}"
+                )
+
+            return {
+                "status": "success",
+                "response": "\n\n".join(response_parts),
+                "query": query,
+                "total_indexed": len(chunks) if "chunks" in dir() else 0,
+                "result_count": len(results),
+                "results": results[:5],
+            }
+        except Exception as e:
+            return {
+                "status": "failed",
+                "response": f"Error en búsqueda: {e}",
                 "error": str(e),
             }
 
