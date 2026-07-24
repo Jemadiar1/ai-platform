@@ -370,6 +370,7 @@ class DocumentArtifact(Base):
     page_count = Column(Integer, nullable=True)
     language = Column(String(10), default="es")
     checksum = Column(String(64), nullable=True)
+    extracted_text = Column(Text, nullable=True)
     created_by = Column(PG_UUID(as_uuid=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

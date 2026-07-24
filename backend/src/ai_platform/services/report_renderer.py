@@ -14,10 +14,14 @@ Usar:
 """
 
 import base64
+import csv
 import io
 import logging
 import time
 from dataclasses import asdict
+from typing import Any
+
+from docx.shared import Pt
 
 from ai_platform.core.config import get_settings
 from ai_platform.database import make_session
@@ -274,7 +278,7 @@ class ReportRendererService:
             style = doc.styles["Normal"]
             font = style.font
             font.name = spec.theme.font_family.split(",")[0].strip()
-            font.size = __import__("docx.shared").Pt(11)
+            font.size = Pt(11)
 
             doc.add_heading(spec.title, level=0)
             doc.add_paragraph(f"Audiencia: {spec.audience}")
@@ -286,7 +290,7 @@ class ReportRendererService:
                 for chart in section.charts:
                     if chart.id in chart_images:
                         doc.add_picture(
-                            __import__("io").BytesIO(chart_images[chart.id]),
+                            io.BytesIO(chart_images[chart.id]),
                             width=Inches(5),
                         )
 
@@ -342,8 +346,8 @@ class ReportRendererService:
     def _generate_csv(self, spec: ReportSpec) -> bytes:
         """Generar CSV desde ReportSpec."""
 
-        buf = __import__("io").BytesIO()
-        writer = __import__("csv").writer(buf)
+        buf = io.BytesIO()
+        writer = csv.writer(buf)
 
         for section in spec.sections:
             writer.writerow([f"SECCIÓN: {section.title}"])
