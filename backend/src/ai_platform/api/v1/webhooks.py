@@ -430,6 +430,12 @@ async def _process_channel_message(
             "module": module_name,
         }
 
+    # Actualizar module_name si Odin redirigió (ej: uncategorized → ai-connect)
+    updated_module = decision["module"]
+    if updated_module != module_name:
+        logger.info(f"ODIN redirect: {module_name!r} → {updated_module!r}")
+        module_name = updated_module
+
     logger.info(f"MODULE_RESULT keys: {list(module_result.keys())}")
     logger.info(f"MODULE_RESULT['response']: {str(module_result.get('response', '<absent>'))[:100]}")
     logger.info(f"MODULE_RESULT['result']: {str(module_result.get('result', '<absent>'))[:100]}")
@@ -545,6 +551,12 @@ async def _execute_module(
 ) -> dict[str, Any]:
     """Ejecutar el módulo seleccionado dinámicamente."""
     from ai_platform.orchestrator.modules import get_handler
+
+    # Fallback: uncategorized → ai-connect (módulo general de comunicación)
+    if module_name == "uncategorized":
+        logger = logging.getLogger(__name__)
+        logger.info(f"Module uncategorized, redirecting to ai-connect")
+        module_name = "ai-connect"
 
     HandlerClass = get_handler(module_name)
     if HandlerClass is None:
