@@ -302,7 +302,7 @@ class ReportRendererService:
                         for col_idx, cell in enumerate(row):
                             t.rows[row_idx + 1].cells[col_idx].text = str(cell)
 
-            buf = __import__("io").BytesIO()
+            buf = io.BytesIO()
             doc.save(buf)
             buf.seek(0)
             return buf.getvalue()
@@ -335,7 +335,7 @@ class ReportRendererService:
                     for d in chart.data:
                         ws.append([d.get("label", ""), d.get("value", "")])
 
-            buf = __import__("io").BytesIO()
+            buf = io.BytesIO()
             wb.save(buf)
             buf.seek(0)
             return buf.getvalue()
