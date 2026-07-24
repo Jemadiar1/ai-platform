@@ -74,7 +74,8 @@ class Handler:
         }
 
         if action not in actions:
-            raise ValueError(f"Acción no soportada: {action}")
+            logger.info(f"Acción '{action}' no mapeada; usando send_message (respuesta IA genérica)")
+            action = "send_message"
 
         logger.info(f"Ejecutando acción {action} del módulo Connect")
         result = actions[action](payload)
