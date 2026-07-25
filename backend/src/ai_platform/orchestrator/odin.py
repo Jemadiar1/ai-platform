@@ -357,6 +357,17 @@ class Odin:
         # Inyectar contexto en la payload
         enriched_payload = self._enrich_payload(params, decision)
 
+        # Pre-execution fallback: document_ingest sin params → redirigir a ai-connect
+        if module == "ai-analytics" and decision.get("action") == "document_ingest":
+            has_file = enriched_payload.get("file_bytes") or enriched_payload.get("file_base64") or enriched_payload.get("original_filename")
+            if not has_file:
+                logger.warning(f"document_ingest sin archivo, redirigiendo a ai-connect:send_message")
+                module = "ai-connect"
+                decision["module"] = "ai-connect"
+                decision["action"] = "send_message"
+                decision["params"] = {}
+                enriched_payload = self._enrich_payload({}, decision)
+
         try:
             # Simular ejecución del módulo
             # En producción, esto invocará al handler del módulo

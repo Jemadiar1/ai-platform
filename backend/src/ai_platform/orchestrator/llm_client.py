@@ -429,37 +429,17 @@ class LLMClient:
             "- ai-leads: Generación y gestión de leads\n"
             "- ai-ads: Campañas publicitarias (Meta Ads, Google Ads)\n"
             "- ai-analytics: Análisis de datos, investigación web, OCR, chunking y búsqueda en documentos\n"
-            "- ai-web: Generación de páginas web y landing pages\n"
-            "- ai-documents: Generación de archivos profesionales (DOCX, XLSX, PPTX, PDF, imágenes)\n\n"
-            "Acciones válidas por módulo:\n"
-            "ai-connect: send_message, make_voice_call, schedule_appointment, handle_chat_message, update_contact, get_contacts\n"
-            "ai-content: generate_content, default\n"
-            "ai-social: create_post, analyze_engagement, default\n"
-            "ai-leads: generate_leads, default\n"
-            "ai-ads: create_campaign, default\n"
-            "ai-analytics: web_research, web_fetch, web_browser, ocr_extract, chart_detect, chart_analyze, image_describe, document_understand, document_ingest, document_chunk, document_fts_search, generate_report, render_report, default\n"
-            "ai-web: generate_page, default\n"
-            "ai-documents: render_docx, render_xlsx, render_pptx, render_png, render_pdf, render_all, default\n\n"
+            "- ai-documents: Generación de archivos profesionales (DOCX, XLSX, PPTX, PDF, imágenes)\n"
+            "- ai-web: Generación de páginas web y landing pages\n\n"
             "Principios de decisión:\n"
             "1. Siempre selecciona UN SOLO módulo principal\n"
             "2. Si el usuario pide múltiples módulos, selecciona el principal y marca 'needs_decomposition': true\n"
             "3. Piensa en el INTENT del usuario, no solo las palabras clave\n"
             "4. Si una tarea no encaja en ningún módulo, responde 'uncategorized'\n\n"
-            "Reglas de routing específicas:\n"
-            "- Generar documentos profesionales (DOCX, PPTX, XLSX, PDF, imágenes) → ai-documents\n"
-            "- Procesar, subir o ingresar documentos nuevos para chunking/búsqueda/OCR → ai-analytics\n"
-            "- Investigación web, fetch de URLs → ai-analytics\n"
-            "- Reportes analíticos con datos → ai-analytics\n"
-            "- Mensajería/chat → ai-connect\n"
-            "- Contenido/marketing → ai-content\n"
-            "- Redes sociales → ai-social\n"
-            "- Leads → ai-leads\n"
-            "- Publicidad → ai-ads\n"
-            "- Páginas web → ai-web\n\n"
             "Debes responder SIEMPRE en este formato JSON:\n"
             "{\n"
-            '  "module": "ai-connect" | "ai-content" | "ai-ads" | "ai-analytics" | "ai-leads" | "ai-social" | "ai-web" | "ai-documents" | "uncategorized",\n'
-            '  "action": "una de las acciones válidas listadas arriba",\n'
+            '  "module": "ai-connect" | "ai-content" | "ai-ads" | "ai-analytics" | "ai-documents" | "ai-leads" | "ai-social" | "ai-web" | "uncategorized",\n'
+            '  "action": "string describing the specific action",\n'
             '  "confidence": 0.0 - 1.0,\n'
             '  "reasoning": "why this module was chosen",\n'
             '  "needs_decomposition": false\n'

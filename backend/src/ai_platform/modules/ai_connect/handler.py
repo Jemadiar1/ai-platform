@@ -104,6 +104,10 @@ class Handler:
         if not message_text:
             raise ValueError("No se proporcionó texto del mensaje")
 
+        # Truncar a 500 chars para evitar timeouts con prompts gigantescos
+        if len(message_text) > 500:
+            message_text = message_text[:500] + "..."
+
         logger.info(f"Generando respuesta IA para: {message_text[:100]}")
 
         try:

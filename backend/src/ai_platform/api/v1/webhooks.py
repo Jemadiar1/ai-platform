@@ -35,7 +35,14 @@ async def telegram_webhook(request: Request):
     logger = logging.getLogger(__name__)
 
     payload_bytes = await request.body()
-    update_data = json.loads(payload_bytes)
+    if not payload_bytes:
+        logger.warning("Telegram webhook: body vacío recibido")
+        return {"status": "error", "reason": "empty_body"}
+    try:
+        update_data = json.loads(payload_bytes)
+    except json.JSONDecodeError as e:
+        logger.error(f"Telegram webhook: JSON inválido: {e}")
+        return {"status": "error", "reason": "invalid_json"}
     channel = TelegramChannel()
 
     # Validar webhook
