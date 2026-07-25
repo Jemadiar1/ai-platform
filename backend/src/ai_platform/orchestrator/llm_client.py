@@ -17,6 +17,9 @@ Patrones de optimización:
 - Timeout de 30 segundos por decisión
 """
 
+import base64
+import base64
+import base64
 import json
 import logging
 from typing import Any
@@ -703,6 +706,140 @@ class LLMClient:
         Fallback: descomposición basada en reglas simples.
         """
         return [self._rule_based_routing(prompt)]
+
+    @staticmethod
+    def encode_image_to_base64(image_bytes: bytes) -> str:
+        """Convert image bytes to base64 data URL.
+
+        Parámetros:
+            image_bytes: Raw bytes of the image
+
+        Retorna:
+            data URL string: data:image/png;base64,iVBOR...
+        """
+        encoded = base64.b64encode(image_bytes).decode("utf-8")
+        return f"data:image/png;base64,{encoded}"
+
+    async def vision_chat(
+        self, prompt: str, image_bytes: bytes, *, tenant_id: str = ""
+    ) -> dict[str, Any]:
+        """
+        Enviar una imagen + prompt a un LLM multimodal (vision).
+
+        Construye un mensaje multimodal con formato OpenAI compatible:
+        [
+            {"type": "text", "text": "¿Qué ves?"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}
+        ]
+
+        La imagen se codifica a base64 y se envía junto al prompt de texto.
+        El modelo interpreta la imagen textualmente.
+
+        Parámetros:
+            prompt: Pregunta o instrucción sobre la imagen
+            image_bytes: Bytes de la imagen (PNG, JPG, etc.)
+            tenant_id: ID del tenant (para logging)
+
+        Retorna:
+            Dict con 'text' (respuesta del modelo) y 'model' usado
+        """
+        if not image_bytes:
+            logger.warning("vision_chat called with empty image_bytes")
+            return {
+                "text": "No se recibió imagen para analizar",
+                "model": self.settings.VISION_MODEL,
+            }
+
+        try:
+            encoded = self.encode_image_to_base64(image_bytes)
+        except Exception as e:
+            logger.error(f"Error encoding image to base64: {e}")
+            return {"text": "Error al procesar la imagen", "model": self.settings.VISION_MODEL}
+
+        model = self.settings.VISION_MODEL or "mimo-v2.5"
+        max_retries = 2
+
+        for attempt in range(max_retries):
+            try:
+                response = await self.client.post(
+                    self._chat_path,
+                    json={
+                        "model": model,
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": prompt},
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {"url": encoded},
+                                    },
+                                ],
+                            }
+                        ],
+                        "max_tokens": 2048,
+                        "temperature": 0.3,
+                    },
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    content = data["choices"][0]["message"]["content"]
+                    logger.info(
+                        f"Vision chat OK: model={model}, attempt={attempt+1}, "
+                        f"text_len={len(content)}"
+                    )
+                    if content and content.strip():
+                        return {"text": content.strip(), "model": model}
+                    return {"text": "", "model": model}
+
+                logger.warning(
+                    f"vision_chat({model}) attempt {attempt+1}/{max_retries} "
+                    f"failed: {response.status_code}"
+                )
+
+                # Retry with secondary model on second attempt
+                if attempt == 0 and self.settings.VISION_MODEL_SECONDARY:
+                    model = self.settings.VISION_MODEL_SECONDARY
+                    self.client = httpx.AsyncClient(
+                        base_url=self.settings.NAN_API_URL
+                        if self.settings.LLM_PROVIDER.lower() == "nan"
+                        else self.settings.OPENROUTER_API_URL,
+                        headers={
+                            "Authorization": f"Bearer {self.settings.NAN_API_KEY if self.settings.LLM_PROVIDER.lower() == 'nan' else self.settings.OPENROUTER_API_KEY}",
+                            "Content-Type": "application/json",
+                            "HTTP-Referer": "https://github.com/Jemadiar1/ai-platform",
+                            "X-Title": "AI Platform - NeuralCrew Labs",
+                        },
+                        timeout=LLM_TIMEOUT,
+                    )
+                    self._chat_path = "/chat/completions" if self.settings.LLM_PROVIDER.lower() == "nan" else "/v1/chat/completions"
+                    continue
+
+            except Exception as e:
+                logger.error(f"vision_chat attempt {attempt+1} error: {e}")
+                if attempt == 0 and self.settings.VISION_MODEL_SECONDARY:
+                    model = self.settings.VISION_MODEL_SECONDARY
+                    self.client = httpx.AsyncClient(
+                        base_url=self.settings.NAN_API_URL
+                        if self.settings.LLM_PROVIDER.lower() == "nan"
+                        else self.settings.OPENROUTER_API_URL,
+                        headers={
+                            "Authorization": f"Bearer {self.settings.NAN_API_KEY if self.settings.LLM_PROVIDER.lower() == 'nan' else self.settings.OPENROUTER_API_KEY}",
+                            "Content-Type": "application/json",
+                            "HTTP-Referer": "https://github.com/Jemadiar1/ai-platform",
+                            "X-Title": "AI Platform - NeuralCrew Labs",
+                        },
+                        timeout=LLM_TIMEOUT,
+                    )
+                    self._chat_path = "/chat/completions" if self.settings.LLM_PROVIDER.lower() == "nan" else "/v1/chat/completions"
+                    continue
+
+        logger.error(f"vision_chat failed after {max_retries} attempts")
+        return {
+            "text": "Lo siento, no pude analizar la imagen. Intenta de nuevo.",
+            "model": "error",
+        }
 
     def chat(self, prompt: str, tenant_id: str = "", user_id: str = "") -> dict[str, Any]:
         """

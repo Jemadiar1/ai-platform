@@ -867,3 +867,8 @@ class TelegramReactionHandler:
                 }
 
         return {"status": "ignored"}
+
+    async def download_photo(self, file_id: str) -> tuple[bytes, str]:
+        """Descargar foto de Telegram y retornar como bytes."""
+        photo_bytes, _ = await self.download_file(file_id)
+        return photo_bytes, "image/jpeg"

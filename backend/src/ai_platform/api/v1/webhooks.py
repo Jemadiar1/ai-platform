@@ -64,15 +64,41 @@ async def telegram_webhook(request: Request):
 
     reply_to_message_id = message.get("reply_to_message", {}).get("message_id")
 
-    # Procesar archivos adjuntos (transcribir voz, descargar documentos, etc.)
-    message_text, reply_to_message_id = await _process_tg_attachments(
-        channel=channel,
-        user_id=user_id,
-        chat_id=chat_id,
-        message_text=message_text,
-        attachments=attachments,
-        reply_to_message_id=reply_to_message_id,
-    )
+    # If there's a photo, download it and get a description via vision model
+    if attachments:
+        photos = [a for a in attachments if a.get("type") == "photo" and a.get("file_id")]
+        photo_descriptions = []
+        if photos:
+            from ai_platform.orchestrator.llm_client import LLMClient
+
+            llm_client = LLMClient()
+            try:
+                for photo in photos:
+                    photo_bytes, _ = await channel.download_photo(photo["file_id"])
+                    if photo_bytes:
+                        desc = await llm_client.vision_chat(
+                            "Describe esta imagen en español con detalle. Si es un gráfico, extrae los datos clave. Si es una escena, describe lo que se ve.",
+                            photo_bytes,
+                        )
+                        text = desc.get("text", "") if isinstance(desc, dict) else str(desc)
+                        if text and text.strip():
+                            photo_descriptions.append(text)
+            finally:
+                try:
+                    await llm_client.close()
+                except Exception:
+                    pass
+
+        # Procesar archivos adjuntos (transcribir voz, descargar documentos, etc.)
+        message_text, reply_to_message_id = await _process_tg_attachments(
+            channel=channel,
+            user_id=user_id,
+            chat_id=chat_id,
+            message_text=message_text,
+            attachments=attachments,
+            photo_descriptions=photo_descriptions,
+            reply_to_message_id=reply_to_message_id,
+        )
 
     logger.info(f"Mensaje entrante Telegram: user={user_id}, text={message_text[:100]}, files={len(attachments)}")
 
@@ -249,12 +275,13 @@ async def _process_tg_attachments(
     message_text: str,
     attachments: list[dict],
     reply_to_message_id: int | None = None,
+    photo_descriptions: list[str] | None = None,
 ) -> tuple[str, int | None]:
     """Procesar archivos adjuntos de Telegram de forma silenciosa.
 
     - Voice notes: se transcriben y la transcripción se convierte en message_text
     - Documents: se extrae el texto y se agrega al message_text
-    - Photos/video/audio: se ignoran silenciosamente (sin notificar al usuario)
+    - Photos: se describen con LLM vision y se agregan al message_text
 
     Retorna:
         (message_text_modificado, reply_to_message_id_actualizado)
@@ -323,6 +350,11 @@ async def _process_tg_attachments(
         for vt in voice_transcriptions:
             if vt:
                 final_parts.append(vt)
+
+    if photo_descriptions:
+        for pd_text in photo_descriptions:
+            if pd_text:
+                final_parts.append(pd_text)
 
     if document_texts:
         for dt in document_texts:

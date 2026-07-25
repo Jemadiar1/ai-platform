@@ -494,7 +494,7 @@ class Odin:
 
         try:
             handler_instance = HandlerClass()
-            result = handler_instance.execute(payload)
+            result = await handler_instance.execute(payload)
             return result if isinstance(result, dict) else {"status": "ok", "data": result}
         except Exception as e:
             logger.error(f"Module execution failed: {module} -> {e}")
