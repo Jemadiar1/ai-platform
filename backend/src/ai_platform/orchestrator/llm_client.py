@@ -873,6 +873,7 @@ class LLMClient:
         cuando el módulo ai-connect recibe una acción send_message.
         """
         model = self.settings.PRIMARY_MODEL or "qwen3.6"
+        response = None
 
         try:
             with httpx.Client(
@@ -900,32 +901,28 @@ class LLMClient:
                     },
                 )
 
-                if response.status_code == 200:
-                    data = response.json()
-                    if "choices" in data and len(data["choices"]) > 0:
-                        choice = data["choices"][0]
-                        finish_reason = choice.get("finish_reason", "")
-                        content = choice.get("message", {}).get("content", "")
+                if response is None or response.status_code != 200:
+                    error_detail = response.text[:200] if response else "No response received"
+                    logger.warning(f"Chat LLM failed: {error_detail}")
+                    return {
+                        "content": "Lo siento, estoy teniendo problemas para generar una respuesta. Intenta de nuevo.",
+                        "model": model,
+                    }
 
-                        if finish_reason == "length":
-                            logger.warning(
-                                f"Chat LLM response truncated (finish_reason=length), "
-                                f"consider increasing max_tokens. Prompt length: {len(prompt)} chars"
-                            )
-                            return {"content": content.strip(), "model": model, "_truncated": True}
+                data = response.json()
+                content = ""
+                if "choices" in data and len(data["choices"]) > 0:
+                    choice = data["choices"][0]
+                    content = choice.get("message", {}).get("content", "")
 
-                        if content and content.strip():
-                            return {"content": content.strip(), "model": model}
-                    else:
-                        content = data.get("content", "")
-                        if content and content.strip():
-                            return {"content": content.strip(), "model": model}
-
-                logger.warning(f"Chat LLM failed with status {response.status_code}: {response.text[:200]}")
-                return {
-                    "content": "Lo siento, estoy teniendo problemas para generar una respuesta. Intenta de nuevo.",
-                    "model": model,
-                }
+                if content and content.strip():
+                    _truncated = choice.get("finish_reason") == "length"
+                    result = {"content": content.strip(), "model": model, "_truncated": _truncated}
+                    if _truncated:
+                        logger.warning(
+                            f"Response truncated, consider increasing max_tokens. Prompt: {len(prompt)} chars"
+                        )
+                    return result
         except Exception as e:
             logger.error(f"Chat LLM error: {e}")
             return {

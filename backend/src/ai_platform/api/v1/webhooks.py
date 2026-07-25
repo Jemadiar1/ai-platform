@@ -702,9 +702,10 @@ async def _execute_module(
     """Ejecutar el módulo seleccionado dinámicamente."""
     from ai_platform.orchestrator.modules import get_handler
 
+    logger = logging.getLogger(__name__)
+
     # Fallback: uncategorized → ai-connect (módulo general de comunicación)
     if module_name == "uncategorized":
-        logger = logging.getLogger(__name__)
         logger.info(f"Module uncategorized, redirecting to ai-connect")
         module_name = "ai-connect"
 
