@@ -25,6 +25,7 @@ from ai_platform.api.v1.admin import router as admin_router
 from ai_platform.api.v1.odin import router as odin_router
 from ai_platform.api.v1.ping import router as ping_router
 from ai_platform.api.v1.reports import router as reports_router
+from ai_platform.api.v1.ai_documents_api import router as ai_documents_router
 from ai_platform.api.v1.tasks import router as tasks_router
 from ai_platform.api.v1.tenants import router as tenants_router
 from ai_platform.api.v1.web_research import router as web_research_router
@@ -43,6 +44,7 @@ router.include_router(tenants_router, prefix="/tenants", tags=["tenants"])
 router.include_router(web_research_router, prefix="/web_research", tags=["web_research"])
 router.include_router(documents_router, prefix="/documents", tags=["documents"])
 router.include_router(reports_router, prefix="/reports", tags=["reports"])
+router.include_router(ai_documents_router, prefix="/ai_documents", tags=["ai-documents"])
 router.include_router(webhooks_router)
 router.include_router(kb_router)
 router.include_router(feedback_router)

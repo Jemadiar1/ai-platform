@@ -154,6 +154,21 @@ _MODULES: list[ModuleInfo] = [
             ModuleAction("default", "Acción genérica de web"),
         ),
     ),
+    ModuleInfo(
+        name="ai-documents",
+        description="Generación de archivos profesionales (DOCX, PPTX, XLSX, PDF, imágenes)",
+        handler_path="ai_platform.modules.ai_documents.handler",
+        category="documents",
+        actions=(
+            ModuleAction("render_docx", "Generar documento DOCX profesional desde markdown"),
+            ModuleAction("render_xlsx", "Generar hoja de cálculo XLSX profesional desde markdown"),
+            ModuleAction("render_pptx", "Generar presentación PPTX profesional desde markdown"),
+            ModuleAction("render_png", "Generar imagen PNG (gráfico, banner, infografía)"),
+            ModuleAction("render_pdf", "Generar documento PDF profesional desde markdown"),
+            ModuleAction("render_all", "Generar todos los formatos disponibles"),
+            ModuleAction("default", "Acción genérica de documentos"),
+        ),
+    ),
 ]
 
 # Build lookup dict

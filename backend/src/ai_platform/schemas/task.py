@@ -26,7 +26,7 @@ class TaskCreate(BaseModel):
     module: str = Field(
         description="Módulo que ejecutará la tarea",
         # Solo permite módulos válidos
-        pattern=r"^(ai-connect|ai-content|ai-social|ai-leads|ai-ads|ai-analytics|ai-web)$",
+        pattern=r"^(ai-connect|ai-content|ai-social|ai-leads|ai-ads|ai-analytics|ai-web|ai-documents)$",
     )
     payload: dict[str, Any] = Field(description="Datos de la tarea en formato JSON", max_length=65536)
     priority: int = Field(default=0, ge=0, le=2, description="Prioridad: 0=normal, 1=alta, 2=critical")
