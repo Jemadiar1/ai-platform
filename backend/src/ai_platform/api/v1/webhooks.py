@@ -719,9 +719,30 @@ async def _execute_module(
     try:
         handler_instance = HandlerClass()
         execute_result = handler_instance.execute(
-            {
+                {
+                    "module": module_name,
+                    "action": action,
+                    "params": {**params, "chat_id": chat_id, "channel": channel},
+                    "metadata": {
+                        "tenant_id": tenant_id,
+                        "user_id": user_id,
+                        "chat_id": chat_id,
+                        "channel": channel,
+                        "message_text": message_text,
+                    },
+                }
+                )
+
+        # Fallback: si la acción no es válida, reintentar con "default"
+        if (
+            isinstance(execute_result, dict)
+            and execute_result.get("status") == "failed"
+            and "no encontrada" in execute_result.get("error", "")
+        ):
+            logger.warning(f"Action inválida en {module_name}, reintentando con 'default'")
+            execute_result = handler_instance.execute({
                 "module": module_name,
-                "action": action,
+                "action": "default",
                 "params": {**params, "chat_id": chat_id, "channel": channel},
                 "metadata": {
                     "tenant_id": tenant_id,
@@ -730,8 +751,8 @@ async def _execute_module(
                     "channel": channel,
                     "message_text": message_text,
                 },
-            }
-            )
+            })
+
         return execute_result
 
     except Exception as e:

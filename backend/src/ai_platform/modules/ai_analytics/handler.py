@@ -73,6 +73,7 @@ class Handler:
             "document_ingest": self._document_ingest,
             "document_chunk": self._document_chunk,
             "document_fts_search": self._document_fts_search,
+            "list_supported_file_formats": self._list_supported_file_formats,
             "default": self._default,
         }
 
@@ -82,7 +83,7 @@ class Handler:
                 "action": action,
                 "status": "failed",
                 "error": f"Acción '{action}' no encontrada en ai-analytics",
-                "note": "Acciones disponibles: web_research, web_fetch, web_browser, generate_report, render_report, ocr_extract, chart_detect, document_ingest, document_chunk, document_fts_search, default",
+                "note": "Acciones disponibles: web_research, web_fetch, web_browser, generate_report, render_report, ocr_extract, chart_detect, document_ingest, document_chunk, document_fts_search, list_supported_file_formats, default",
                 "timestamp": datetime.utcnow().isoformat(),
             }
 
@@ -810,6 +811,26 @@ class Handler:
                 "response": f"Error en búsqueda: {e}",
                 "error": str(e),
             }
+
+    # =========================================================================
+    # Listado de formatos soportados
+    # =========================================================================
+
+    def _list_supported_file_formats(self, params: dict, metadata: dict, tenant_id: str) -> dict:
+        """Retornar lista de formatos de archivo que el sistema puede leer y procesar."""
+        return {
+            "status": "success",
+            "response": (
+                "Puedo leer y procesar los siguientes formatos:\n"
+                "• Documentos: PDF, DOCX, TXT, RTF\n"
+                "• Hojas de cálculo: XLSX, CSV, TSV\n"
+                "• Presentaciones: PPTX\n"
+                "• Imágenes: PNG, JPEG, JPG, BMP, GIF, TIFF\n"
+                "• Datos: JSON, XML\n"
+                "\n"
+                "Además, puedo transcribir notas de voz (OGG, MP3, WAV) y extraer texto de imágenes escaneadas con OCR."
+            ),
+        }
 
     # =========================================================================
     # Fallback
