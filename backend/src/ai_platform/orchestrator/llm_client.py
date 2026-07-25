@@ -428,24 +428,38 @@ class LLMClient:
             "- ai-social: Gestión de redes sociales (Instagram, Facebook, LinkedIn)\n"
             "- ai-leads: Generación y gestión de leads\n"
             "- ai-ads: Campañas publicitarias (Meta Ads, Google Ads)\n"
-            "- ai-analytics: Análisis de datos, métricas, reportes, investigación web, OCR y renderizado\n"
-            "- ai-web: Generación de páginas web y landing pages\n\n"
-            "Capacidades internas de ai-analytics:\n"
-            "- web_research: Investigar fuentes web, fetch de URLs, navegación headless\n"
-            "- document_ingestion: Procesar documentos (PDF, DOCX, imágenes) con chunking y FTS\n"
-            "- vision_ocr: Extraer texto de imágenes/escaneos con OCR (Tesseract), detectar gráficos\n"
-            "- report_renderer: Generar reportes en PDF, DOCX, XLSX, CSV con gráficos\n\n"
+            "- ai-analytics: Análisis de datos, investigación web, OCR, chunking y búsqueda en documentos\n"
+            "- ai-web: Generación de páginas web y landing pages\n"
+            "- ai-documents: Generación de archivos profesionales (DOCX, XLSX, PPTX, PDF, imágenes)\n\n"
+            "Acciones válidas por módulo:\n"
+            "ai-connect: send_message, make_voice_call, schedule_appointment, handle_chat_message, update_contact, get_contacts\n"
+            "ai-content: generate_content, default\n"
+            "ai-social: create_post, analyze_engagement, default\n"
+            "ai-leads: generate_leads, default\n"
+            "ai-ads: create_campaign, default\n"
+            "ai-analytics: web_research, web_fetch, web_browser, ocr_extract, chart_detect, chart_analyze, image_describe, document_understand, document_ingest, document_chunk, document_fts_search, generate_report, render_report, default\n"
+            "ai-web: generate_page, default\n"
+            "ai-documents: render_docx, render_xlsx, render_pptx, render_png, render_pdf, render_all, default\n\n"
             "Principios de decisión:\n"
             "1. Siempre selecciona UN SOLO módulo principal\n"
-            "2. Si el usuario pide múltiples módulos, selecciona el principal y\n"
-            "   marca 'needs_decomposition': true\n"
+            "2. Si el usuario pide múltiples módulos, selecciona el principal y marca 'needs_decomposition': true\n"
             "3. Piensa en el INTENT del usuario, no solo las palabras clave\n"
-            "4. Si una tarea no encaja en ningún módulo, responde 'uncategorized'\n"
-            "5. Investigación web, OCR, procesamiento de documentos y reportes van a ai-analytics\n\n"
+            "4. Si una tarea no encaja en ningún módulo, responde 'uncategorized'\n\n"
+            "Reglas de routing específicas:\n"
+            "- Generar documentos profesionales (DOCX, PPTX, XLSX, PDF, imágenes) → ai-documents\n"
+            "- Procesar, subir o ingresar documentos nuevos para chunking/búsqueda/OCR → ai-analytics\n"
+            "- Investigación web, fetch de URLs → ai-analytics\n"
+            "- Reportes analíticos con datos → ai-analytics\n"
+            "- Mensajería/chat → ai-connect\n"
+            "- Contenido/marketing → ai-content\n"
+            "- Redes sociales → ai-social\n"
+            "- Leads → ai-leads\n"
+            "- Publicidad → ai-ads\n"
+            "- Páginas web → ai-web\n\n"
             "Debes responder SIEMPRE en este formato JSON:\n"
             "{\n"
-            '  "module": "ai-connect" | "ai-content" | "ai-ads" | "ai-analytics" | "ai-leads" | "ai-social" | "ai-web" | "uncategorized",\n'
-            '  "action": "string describing the specific action",\n'
+            '  "module": "ai-connect" | "ai-content" | "ai-ads" | "ai-analytics" | "ai-leads" | "ai-social" | "ai-web" | "ai-documents" | "uncategorized",\n'
+            '  "action": "una de las acciones válidas listadas arriba",\n'
             '  "confidence": 0.0 - 1.0,\n'
             '  "reasoning": "why this module was chosen",\n'
             '  "needs_decomposition": false\n'
@@ -515,13 +529,21 @@ class LLMClient:
             "Eres Odin, el orquestador de AI Platform. "
             "Tu trabajo es descomponer tareas complejas en pasos simples.\n\n"
             "Cada paso debe ser un módulo específico con su acción.\n"
-            "Módulos: ai-connect, ai-content, ai-social, ai-leads, ai-ads, ai-analytics, ai-web\n\n"
-            "ai-analytics incluye: web_research, document_ingestion, vision_ocr, report_renderer\n\n"
+            "Módulos: ai-connect, ai-content, ai-social, ai-leads, ai-ads, ai-analytics, ai-web, ai-documents\n\n"
+            "Acciones por módulo:\n"
+            "ai-connect: send_message, make_voice_call, schedule_appointment, handle_chat_message, update_contact, get_contacts\n"
+            "ai-content: generate_content, default\n"
+            "ai-social: create_post, analyze_engagement, default\n"
+            "ai-leads: generate_leads, default\n"
+            "ai-ads: create_campaign, default\n"
+            "ai-analytics: web_research, web_fetch, web_browser, ocr_extract, chart_detect, chart_analyze, image_describe, document_understand, document_ingest, document_chunk, document_fts_search, generate_report, render_report, default\n"
+            "ai-web: generate_page, default\n"
+            "ai-documents: render_docx, render_xlsx, render_pptx, render_png, render_pdf, render_all, default\n\n"
             "Responde SIEMPRE en este formato JSON:\n"
             "{\n"
             '  "steps": [\n'
             '    {"module": "ai-connect", "action": "send_message", "params": {}, "depends_on": null},\n'
-            '    {"module": "ai-social", "action": "post", "params": {}, "depends_on": 0}\n'
+            '    {"module": "ai-social", "action": "create_post", "params": {}, "depends_on": 0}\n'
             "  ]\n"
             "}\n\n"
             "'depends_on' es el índice 0-based del paso que debe completarse antes.\n"
@@ -646,19 +668,29 @@ class LLMClient:
             }
         elif any(
             word in prompt_lower
-            for word in ["research", "investigar", "web search", "buscar web", "fetch url", "scrape"]
+            for word in ["generar docx", "generar pptx", "generar xlsx", "generar pdf", "generar png",
+                         "crear docx", "crear pptx", "crear xlsx", "crear pdf", "crear png",
+                         "crear documento", "crear presentación", "crear hoja de cálculo", "crear imagen",
+                         "render docx", "render pptx", "render xlsx", "render pdf", "render png",
+                         "professional doc", "professional pptx", "professional xlsx", "professional pdf",
+                         "generate docx", "generate pptx", "generate xlsx", "generate pdf", "generate png",
+                         "generate document", "generate presentation", "generate spreadsheet", "generate image",
+                         "crear presentación", "crear documento profesional", "crear infografía",
+                         "generar reporte profesional", "generar presentación", "generar documento"]
         ):
             return {
-                "module": "ai-analytics",
-                "action": "web_research",
+                "module": "ai-documents",
+                "action": "render_all",
                 "params": {},
-                "confidence": 0.7,
-                "reasoning": "Rule-based: detected web research keywords",
+                "confidence": 0.8,
+                "reasoning": "Rule-based: detected professional document generation keywords",
                 "needs_decomposition": False,
             }
         elif any(
             word in prompt_lower
-            for word in ["document", "upload", "subir", "pdf", "docx", "chunk", "index", "fts", "search doc"]
+            for word in ["document", "upload", "subir", "pdf", "docx", "chunk", "index", "fts", "search doc",
+                         "ingest", "ingestion", "process document", "analyze document from file",
+                         "sube el documento", "procesa el archivo", "extrae texto del pdf"]
         ):
             return {
                 "module": "ai-analytics",
@@ -677,6 +709,18 @@ class LLMClient:
                 "params": {},
                 "confidence": 0.7,
                 "reasoning": "Rule-based: detected OCR/visual analysis keywords",
+                "needs_decomposition": False,
+            }
+        elif any(
+            word in prompt_lower
+            for word in ["research", "investigar", "web search", "buscar web", "fetch url", "scrape"]
+        ):
+            return {
+                "module": "ai-analytics",
+                "action": "web_research",
+                "params": {},
+                "confidence": 0.7,
+                "reasoning": "Rule-based: detected web research keywords",
                 "needs_decomposition": False,
             }
         elif any(

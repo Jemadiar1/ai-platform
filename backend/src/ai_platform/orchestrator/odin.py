@@ -297,6 +297,7 @@ class Odin:
             "ai-ads",
             "ai-analytics",
             "ai-web",
+            "ai-documents",
         }
         if module not in supported_modules:
             self.trajectory_manager.add_step(
@@ -360,6 +361,16 @@ class Odin:
             # Simular ejecución del módulo
             # En producción, esto invocará al handler del módulo
             result = await self._invoke_module(module, enriched_payload)
+
+            # Fallback: si la acción no es válida, reintentar con "default"
+            if (
+                isinstance(result, dict)
+                and result.get("status") == "failed"
+                and "no encontrada" in result.get("error", "")
+            ):
+                logger.warning(f"Action inválida en {module}, reintentando con 'default': {result.get('error')}")
+                enriched_payload["action"] = "default"
+                result = await self._invoke_module(module, enriched_payload)
 
             # Registrar paso de ejecución en trayectoria
             self.trajectory_manager.add_step(
