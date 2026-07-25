@@ -77,6 +77,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libleptonica-dev \
     # Document ingestion: python-magic
     libmagic1t64 \
+    # Audio transcription: ffmpeg (para notas de voz Telegram)
+    ffmpeg \
     # Report renderer: WeasyPrint
     libpangocairo-1.0-0 \
     libgdk-pixbuf-2.0-0 \

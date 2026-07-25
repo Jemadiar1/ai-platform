@@ -54,6 +54,9 @@ openpyxl = "^3.1.0"
 # Embeddings / pgvector
 pgvector = "^0.2.0"
 
+# Audio / voice transcription (ffmpeg system dep required)
+pydub = "^0.25.1"
+
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"
 pytest-asyncio = "^0.24.0"

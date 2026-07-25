@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     FAST_MODEL: str = Field(default="qwen3.6", description="Modelo rápido para tareas simples")
     FALLBACK_MODEL: str = Field(default="qwen3.6", description="Modelo de respaldo")
 
+    # === Audio Transcription (Whisper) ===
+    WHISPER_MODEL: str = Field(default="whisper", description="Modelo de transcipcion (whisper)")
+
     # === WhatsApp API ===
     WHATSAPP_PHONE_NUMBER_ID: str | None = None
     WHATSAPP_ACCESS_TOKEN: str | None = None

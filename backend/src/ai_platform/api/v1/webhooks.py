@@ -28,11 +28,7 @@ async def telegram_webhook(request: Request):
     Endpoint de webhook de Telegram.
 
     Recepción de mensajes entrantes desde Telegram Bot API.
-
-    Configuración:
-    1. Crear bot con @BotFather → copiar token
-    2. Configurar webhook: curl -X POST "https://api.telegram.org/bot{token}/setWebhook" -d "url=<api>/api/v1/webhooks/telegram"
-    3. Poner token en TELEGRAM_BOT_TOKEN (variable de entorno)
+    Soporta: texto, documentos, imágenes, audio, notas de voz, video.
     """
     from ai_platform.channels.telegram import TelegramChannel
 
@@ -57,30 +53,35 @@ async def telegram_webhook(request: Request):
     if not message:
         return {"status": "ignored", "reason": "sin_mensaje"}
 
-    # Soporte para voice notes
-    voice = message.get("voice")
-    text = message.get("text", message.get("caption", ""))
-    if voice and not text:
-        text = f"[Mensaje de voz - {voice.get('file_size', 0)} bytes]"
-    if not text:
-        return {"status": "ignored", "reason": "mensaje_sin_texto"}
+    # Extraer con soporte de archivos adjuntos
+    extracted = await channel.extract_message(update_data)
 
-    user = message.get("from", {})
-    chat = message.get("chat", {})
+    user_id = extracted.get("user_id", "")
+    user_name = extracted.get("user_name", "unknown")
+    chat_id = extracted.get("chat_id", "")
+    message_text = extracted.get("message_text", "")
+    attachments = extracted.get("attachments", [])
 
-    user_id = str(user.get("id", ""))
-    user_name = user.get("first_name", "unknown")
-    chat_id = str(chat.get("id", ""))
     reply_to_message_id = message.get("reply_to_message", {}).get("message_id")
 
-    logger.info(f"Mensaje entrante Telegram: user={user_id}, text={text[:100]}")
+    # Procesar archivos adjuntos (transcribir voz, descargar documentos, etc.)
+    message_text, reply_to_message_id = await _process_tg_attachments(
+        channel=channel,
+        user_id=user_id,
+        chat_id=chat_id,
+        message_text=message_text,
+        attachments=attachments,
+        reply_to_message_id=reply_to_message_id,
+    )
+
+    logger.info(f"Mensaje entrante Telegram: user={user_id}, text={message_text[:100]}, files={len(attachments)}")
 
     return await _process_channel_message(
         channel="telegram",
         user_id=user_id,
         user_name=user_name,
         chat_id=chat_id,
-        message_text=text,
+        message_text=message_text,
         reply_to_message_id=reply_to_message_id,
     )
 
@@ -239,6 +240,92 @@ async def discord_webhook(request: Request):
 # ============================================================================
 # Funciones auxiliares
 # ============================================================================
+
+
+async def _process_tg_attachments(
+    channel: Any,
+    user_id: str,
+    chat_id: str,
+    message_text: str,
+    attachments: list[dict],
+    reply_to_message_id: int | None = None,
+) -> tuple[str, int | None]:
+    """Procesar archivos adjuntos de Telegram (voz, documentos, imágenes).
+
+    - Transcribe notas de voz con OpenAI Whisper
+    - Agrega info de documentos a la consulta de Odin
+    - Responde al usuario con info de archivos procesados
+
+    Retorna:
+        (message_text_modificado, reply_to_message_id_actualizado)
+    """
+    if not attachments:
+        return message_text, reply_to_message_id
+
+    processed = await channel.process_attachments(attachments, chat_id, reply_to_message_id)
+    if not processed:
+        return message_text, reply_to_message_id
+
+    reply_to_message_id = reply_to_message_id or (
+        processed[0].get("reply_to_message_id") if isinstance(processed[0], dict) else None
+    )
+
+    file_context_parts = []
+    voice_transcriptions = []
+
+    for p in processed:
+        ptype = p.get("type")
+
+        if ptype == "voice":
+            transcription = p.get("transcription", "")
+            if transcription and transcription != "[No se pudo transcribir el audio":
+                voice_transcriptions.append(transcription)
+            else:
+                file_context_parts.append(
+                    f"[Nota de voz ({p.get('duration', 0)}s): no se pudo transcribir - {p.get('error', 'error desconocido')}]"
+                )
+
+        elif ptype == "document":
+            file_name = p.get("file_name", "archivo")
+            file_ext = p.get("file_extension", "bin")
+            mime = p.get("mime_type", "")
+            caption = p.get("caption", "")
+            file_context_parts.append(
+                f"[Archivo: {file_name} ({file_ext}, {mime}]"
+                + (f", caption: {caption}" if caption else "")
+                + ")"
+            )
+
+        elif ptype == "photo":
+            caption = p.get("caption", "")
+            w = p.get("width", "")
+            h = p.get("height", "")
+            file_context_parts.append(
+                f"[Imagen {w}x{h}]"
+                + (f", caption: {caption}" if caption else "")
+            )
+
+        elif ptype == "audio":
+            title = p.get("title", "")
+            performer = p.get("performer", "")
+            file_context_parts.append(
+                f"[Audio: {title or 'sin titulo'}"
+                + (f" por {performer}" if performer else "")
+                + "]"
+            )
+
+    if voice_transcriptions:
+        for vt in voice_transcriptions:
+            if vt and vt != "[No se pudo transcribir el audio":
+                message_text = f"{vt}\n\n{message_text}".strip()
+
+    if file_context_parts and not voice_transcriptions:
+        if message_text:
+            message_text = f"{chr(10).join(file_context_parts)}\n\n{message_text}".strip()
+        else:
+            message_text = f"{chr(10).join(file_context_parts)}"
+
+    return message_text, reply_to_message_id
 
 
 async def _process_channel_message(

@@ -30,3 +30,4 @@ tenacity==9.0.0
 uvicorn==0.30.0
 weasyprint==62.0
 email-validator==2.2.0
+pydub==0.25.1
