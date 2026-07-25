@@ -250,11 +250,11 @@ async def _process_tg_attachments(
     attachments: list[dict],
     reply_to_message_id: int | None = None,
 ) -> tuple[str, int | None]:
-    """Procesar archivos adjuntos de Telegram (voz, documentos, imágenes).
+    """Procesar archivos adjuntos de Telegram de forma silenciosa.
 
-    - Transcribe notas de voz con OpenAI Whisper
-    - Agrega info de documentos a la consulta de Odin
-    - Responde al usuario con info de archivos procesados
+    - Voice notes: se transcriben y la transcripción se convierte en message_text
+    - Documents: se extrae el texto y se agrega al message_text
+    - Photos/video/audio: se ignoran silenciosamente (sin notificar al usuario)
 
     Retorna:
         (message_text_modificado, reply_to_message_id_actualizado)
@@ -266,12 +266,9 @@ async def _process_tg_attachments(
     if not processed:
         return message_text, reply_to_message_id
 
-    reply_to_message_id = reply_to_message_id or (
-        processed[0].get("reply_to_message_id") if isinstance(processed[0], dict) else None
-    )
-
-    file_context_parts = []
     voice_transcriptions = []
+    document_texts = []
+    caption_parts = []
 
     for p in processed:
         ptype = p.get("type")
@@ -280,50 +277,77 @@ async def _process_tg_attachments(
             transcription = p.get("transcription", "")
             if transcription and transcription != "[No se pudo transcribir el audio":
                 voice_transcriptions.append(transcription)
-            else:
-                file_context_parts.append(
-                    f"[Nota de voz ({p.get('duration', 0)}s): no se pudo transcribir - {p.get('error', 'error desconocido')}]"
-                )
+            elif transcription:
+                voice_transcriptions.append(f"[Nota de voz no transcrita: {transcription}]")
+            # caption del voice se agrega como contexto adicional
+            cap = p.get("caption", "")
+            if cap:
+                caption_parts.append(f"Caption del audio: {cap}")
 
         elif ptype == "document":
-            file_name = p.get("file_name", "archivo")
-            file_ext = p.get("file_extension", "bin")
-            mime = p.get("mime_type", "")
-            caption = p.get("caption", "")
-            file_context_parts.append(
-                f"[Archivo: {file_name} ({file_ext}, {mime}]"
-                + (f", caption: {caption}" if caption else "")
-                + ")"
-            )
+            extracted = p.get("extracted_text", "")
+            if extracted and extracted.strip():
+                file_name = p.get("file_name", "documento")
+                file_ext = p.get("file_extension", "bin")
+                caption = p.get("caption", "")
+                doc_header = f"--- Contenido del documento '{file_name}' ({file_ext}) ---\n"
+                document_texts.append(doc_header + extracted + "\n--- Fin del documento ---")
+                if caption:
+                    caption_parts.append(f"Caption del documento '{file_name}': {caption}")
+            # Si no se pudo extraer texto, no mostramos nada al usuario
+            # (el usuario no necesita saber si el documento es un PDF escaneado)
 
         elif ptype == "photo":
-            caption = p.get("caption", "")
-            w = p.get("width", "")
-            h = p.get("height", "")
-            file_context_parts.append(
-                f"[Imagen {w}x{h}]"
-                + (f", caption: {caption}" if caption else "")
-            )
+            cap = p.get("caption", "")
+            if cap:
+                caption_parts.append(f"Caption de la imagen: {cap}")
 
         elif ptype == "audio":
             title = p.get("title", "")
-            performer = p.get("performer", "")
-            file_context_parts.append(
-                f"[Audio: {title or 'sin titulo'}"
-                + (f" por {performer}" if performer else "")
-                + "]"
-            )
+            if title:
+                caption_parts.append(f"Audio: {title}")
+
+        elif ptype in ("video", "video_note", "animation"):
+            # Silenciosamente ignorados
+            pass
+
+    # Construir message_text final
+    # 1. Transcripción de voz (si hay) → es el contenido principal del mensaje
+    # 2. Texto extraído de documentos → se agrega como contexto
+    # 3. Caption del usuario → se mantiene
+    # 4. El original message_text → se mantiene como contexto
+
+    final_parts = []
 
     if voice_transcriptions:
         for vt in voice_transcriptions:
-            if vt and vt != "[No se pudo transcribir el audio":
-                message_text = f"{vt}\n\n{message_text}".strip()
+            if vt:
+                final_parts.append(vt)
 
-    if file_context_parts and not voice_transcriptions:
-        if message_text:
-            message_text = f"{chr(10).join(file_context_parts)}\n\n{message_text}".strip()
-        else:
-            message_text = f"{chr(10).join(file_context_parts)}"
+    if document_texts:
+        for dt in document_texts:
+            if dt:
+                final_parts.append(dt)
+
+    if caption_parts:
+        for cp in caption_parts:
+            if cp:
+                final_parts.append(cp)
+
+    if message_text and message_text.strip():
+        final_parts.append(message_text)
+
+    if final_parts:
+        message_text = "\n\n".join(final_parts).strip()
+
+    # Limpiar temp files
+    for p in processed:
+        temp_path = p.get("temp_path")
+        if temp_path:
+            try:
+                os.unlink(temp_path)
+            except Exception:
+                pass
 
     return message_text, reply_to_message_id
 

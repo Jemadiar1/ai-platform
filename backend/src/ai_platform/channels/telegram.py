@@ -429,43 +429,22 @@ class TelegramChannel(BaseChannel):
     async def process_attachments(self, attachments: list[dict], chat_id: str, reply_to_message_id: int | None = None) -> list[dict]:
         """Process all attachments from a message.
 
-        Downloads files, transcribes voice notes, and returns structured
-        file information.
-
-        Args:
-            attachments: List of attachment dicts from extract_message()
-            chat_id: Chat ID for error responses
+        Downloads files, transcribes voice notes, extracts text from documents.
+        Does NOT send any messages to the user — silent processing only.
 
         Returns:
-            List of processed file info dicts
+            List of processed file info dicts with transcriptions and extracted_text
         """
         if not attachments:
             return []
 
-        # Check if we have a voice note that doesn't have caption text
-        has_voice = any(a.get("type") == "voice" for a in attachments)
-
-        if not has_voice and not attachments:
-            return []
-
-        # Send processing message
-        processing_text = "Procesando tus archivos..."
-        try:
-            await self._reply_processing(chat_id, reply_to_message_id, processing_text)
-        except Exception as e:
-            logger.warning(f"No se pudo enviar mensaje de procesamiento: {e}")
-
         results = []
-        for i, att in enumerate(attachments):
+        for att in attachments:
             att_type = att.get("type")
             file_id = att.get("file_id")
 
             if not file_id:
-                results.append({
-                    "type": att_type,
-                    "file_id": file_id,
-                    "error": "No file_id",
-                })
+                results.append({"type": att_type, "file_id": file_id, "error": "No file_id"})
                 continue
 
             try:
@@ -480,32 +459,20 @@ class TelegramChannel(BaseChannel):
                             "duration": att.get("duration", 0),
                             "transcription": transcript,
                             "caption": att.get("caption", ""),
+                            "temp_path": temp_path,
                         })
+                    except Exception as e:
+                        results.append({"type": "voice", "file_id": file_id, "error": str(e)})
                     finally:
                         try:
                             os.unlink(temp_path)
                         except Exception:
                             pass
 
-                elif att_type == "audio":
-                    temp_path = await self.download_file_to_temp(file_id)
-                    try:
-                        results.append({
-                            "type": "audio",
-                            "file_id": file_id,
-                            "file_name": att.get("file_name", "audio"),
-                            "duration": att.get("duration", 0),
-                            "performer": att.get("performer"),
-                            "title": att.get("title"),
-                            "caption": att.get("caption", ""),
-                            "file_path": temp_path,
-                        })
-                    except Exception as e:
-                        results.append({"type": "audio", "file_id": file_id, "error": str(e)})
-
                 elif att_type == "document":
                     temp_path = await self.download_file_to_temp_with_ext(file_id, att.get("file_extension", "bin"))
                     try:
+                        extracted_text = await self._extract_document_text(temp_path, att.get("mime_type", ""))
                         results.append({
                             "type": "document",
                             "file_id": file_id,
@@ -513,79 +480,98 @@ class TelegramChannel(BaseChannel):
                             "file_extension": att.get("file_extension", "bin"),
                             "mime_type": att.get("mime_type", ""),
                             "caption": att.get("caption", ""),
-                            "file_path": temp_path,
+                            "temp_path": temp_path,
+                            "extracted_text": extracted_text,
                         })
                     except Exception as e:
                         results.append({"type": "document", "file_id": file_id, "error": str(e)})
 
                 elif att_type == "photo":
-                    results.append({
-                        "type": "photo",
-                        "file_id": file_id,
-                        "file_name": "photo.jpg",
-                        "width": att.get("width"),
-                        "height": att.get("height"),
-                        "caption": att.get("caption", ""),
-                    })
+                    results.append({"type": "photo", "file_id": file_id, "caption": att.get("caption", "")})
+
+                elif att_type == "audio":
+                    results.append({"type": "audio", "file_id": file_id, "title": att.get("title")})
 
                 elif att_type == "video":
-                    results.append({
-                        "type": "video",
-                        "file_id": file_id,
-                        "file_name": "video.mp4",
-                        "duration": att.get("duration", 0),
-                        "caption": att.get("caption", ""),
-                    })
-                
+                    results.append({"type": "video", "file_id": file_id})
+
                 elif att_type == "video_note":
-                    temp_path = await self.download_file_to_temp(file_id)
-                    try:
-                        results.append({
-                            "type": "video_note",
-                            "file_id": file_id,
-                            "file_name": "circle_video.mp4",
-                            "length": att.get("length", 0),
-                            "file_path": temp_path,
-                        })
-                    except Exception as e:
-                        results.append({"type": "video_note", "file_id": file_id, "error": str(e)})
+                    results.append({"type": "video_note", "file_id": file_id})
+
+                elif att_type == "animation":
+                    results.append({"type": "animation", "file_id": file_id})
 
             except Exception as e:
                 logger.error(f"Error procesando archivo {att_type}: {e}")
-                results.append({
-                    "type": att_type,
-                    "file_id": file_id,
-                    "error": str(e),
-                })
-
-        if results and not any(r.get("error") for r in results):
-            processed_info = []
-            for r in results:
-                if r["type"] == "voice":
-                    processed_info.append(
-                        f"Audio transcrito: {r.get('transcription', 'sin texto')} "
-                        f"({r.get('duration', 0)}s)"
-                    )
-                elif r["type"] == "document":
-                    processed_info.append(
-                        f"Documento cargado: {r.get('file_name', 'archivo')}"
-                    )
-                elif r["type"] == "file":
-                    processed_info.append(
-                        f"Archivo cargado: {r.get('file_name', 'archivo')}"
-                    )
-
-            if processed_info:
-                try:
-                    await self._reply_processing(
-                        chat_id,
-                        reply_to_message_id,
-                        f"{len(processed_info)} archivo(s) procesado(s):\n" + "\n".join(processed_info),
-                    )
-                except Exception as e:
-                    logger.warning(f"No se pudo enviar info de archivos: {e}")
+                results.append({"type": att_type, "file_id": file_id, "error": str(e)})
 
         return results
+
+    async def _extract_document_text(self, file_path: str, mime_type: str) -> str:
+        """Extract text from a document file.
+
+        Supports: PDF, DOCX, XLSX, TXT, CSV, plain text files.
+        Uses the same libraries as the document pipeline.
+        """
+        extracted = ""
+
+        try:
+            if mime_type == "application/pdf":
+                try:
+                    import pdfplumber
+                    with pdfplumber.open(file_path) as pdf:
+                        pages_text = []
+                        for page in pdf.pages:
+                            text = page.extract_text()
+                            if text:
+                                pages_text.append(text)
+                        extracted = "\n\n".join(pages_text)
+                except ImportError:
+                    import PyMuPDF
+                    doc = PyMuPDF.open(file_path)
+                    pages_text = []
+                    for page in doc:
+                        text = page.get_text()
+                        if text.strip():
+                            pages_text.append(text.strip())
+                    extracted = "\n\n".join(pages_text)
+
+            elif mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                from docx import Document
+                docx_obj = Document(file_path)
+                extracted = "\n".join(para.text for para in docx_obj.paragraphs)
+
+            elif (
+                mime_type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                or "ms-excel" in mime_type
+            ):
+                import openpyxl
+                wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+                sheet_text = []
+                for ws in wb.worksheets:
+                    sheet_text.append(f"--- Sheet: {ws.title} ---")
+                    for row in ws.iter_rows(values_only=True):
+                        row_str = " | ".join(str(cell) if cell is not None else "" for cell in row)
+                        if row_str.strip():
+                            sheet_text.append(row_str)
+                    wb.close()
+                extracted = "\n".join(sheet_text)
+
+            elif mime_type == "text/plain":
+                extracted = open(file_path, "r", encoding="utf-8").read()
+
+            elif mime_type == "text/csv":
+                content = open(file_path, "r", encoding="utf-8").read()
+                extracted = "CSV:\n" + content
+
+            elif mime_type in ("text/html", "text/markdown", "text/xml", "text/json", "text/yaml"):
+                extracted = open(file_path, "r", encoding="utf-8").read()
+
+        except Exception as e:
+            logger.warning(f"Error extrayendo texto de documento: {e}")
+            extracted = "[No se pudo extraer el texto del documento]"
+
+        return extracted if extracted else ""
 
     async def _reply_processing(self, chat_id: str, reply_to: int | None, text: str):
         """Send a quick processing indicator reply."""
