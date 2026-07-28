@@ -6,6 +6,7 @@ al orquestador Odin, que decide qué módulo de negocio ejecutar.
 
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -28,7 +29,8 @@ async def telegram_webhook(request: Request):
     Endpoint de webhook de Telegram.
 
     Recepción de mensajes entrantes desde Telegram Bot API.
-    Soporta: texto, documentos, imágenes, audio, notas de voz, video.
+    Soporta: texto, documentos, imágenes, audio, notas de voz, video,
+             callback queries (botones inline).
     """
     from ai_platform.channels.telegram import TelegramChannel
 
@@ -57,6 +59,16 @@ async def telegram_webhook(request: Request):
         or update_data.get("edited_message")
         or update_data.get("channel_post")
     )
+
+    # Manejar callback queries (clicks en botones inline)
+    callback_query = update_data.get("callback_query")
+    if callback_query:
+        return await _handle_callback_query(
+            channel=channel,
+            callback_query=callback_query,
+            request=request,
+        )
+
     if not message:
         return {"status": "ignored", "reason": "sin_mensaje"}
 
@@ -570,6 +582,7 @@ async def _process_channel_message(
             channel=channel,
             chat_id=chat_id,
             message_text=message_text,
+            reply_to_message_id=reply_to_message_id,
         )
     except Exception as e:
         logger.error(f"Error ejecutando módulo {module_name}: {e}")
@@ -698,6 +711,7 @@ async def _execute_module(
     channel: str,
     chat_id: str,
     message_text: str,
+    reply_to_message_id: int | None = None,
 ) -> dict[str, Any]:
     """Ejecutar el módulo seleccionado dinámicamente."""
     from ai_platform.orchestrator.modules import get_handler
@@ -730,6 +744,7 @@ async def _execute_module(
                         "chat_id": chat_id,
                         "channel": channel,
                         "message_text": message_text,
+                        "reply_to_message_id": reply_to_message_id,
                     },
                 }
                 )
@@ -751,6 +766,7 @@ async def _execute_module(
                     "chat_id": chat_id,
                     "channel": channel,
                     "message_text": message_text,
+                    "reply_to_message_id": reply_to_message_id,
                 },
             })
 
@@ -844,3 +860,386 @@ async def channel_get_tenant_id_for_channel_user(
             }
 
         return None
+
+
+# ============================================================================
+# Callback Query Handler (Telegram inline keyboard buttons)
+# ============================================================================
+
+
+async def _handle_callback_query(
+    channel: "TelegramChannel",
+    callback_query: dict,
+    request: Request,
+) -> dict[str, Any]:
+    """Manejar clicks en botones inline del webhook de Telegram."""
+    from ai_platform.channels.telegram import (
+        _ACTION_MAP,
+        _FORMAT_MIME_MAP,
+        TelegramChannel,
+    )
+    from ai_platform.database import make_session
+    from ai_platform.models.channel_mapping import get_channel_user_info
+    from ai_platform.orchestrator.odin import get_odin
+
+    logger = logging.getLogger(__name__)
+
+    callback_id = callback_query.get("id", "")
+    callback_data = callback_query.get("data", "")
+    from_data = callback_query.get("from", {})
+    message_data = callback_query.get("message") or {}
+    chat_data = message_data.get("chat", {})
+    message_id = message_data.get("message_id")
+
+    user_id = str(from_data.get("id", ""))
+    chat_id = str(chat_data.get("id", ""))
+
+    logger.info(f"Callback query: user={user_id}, chat={chat_id}, data={callback_data!r}")
+
+    # Responder al callback para eliminar spinner del botón
+    await channel.send_answer(callback_id, text="", show_alert=False)
+
+    # Validar que tenga data
+    if not callback_data:
+        return {"status": "ignored", "reason": "no_callback_data"}
+
+    # Responder para eliminar spinner del botón (Telegram requiere respuesta)
+    # Ahora procesamos el callback
+    if callback_data.startswith("format:"):
+        # Selección de formato de documento
+        format_choice = callback_data.split(":", 1)[1]
+
+        # Resolver tenant_id
+        with make_session() as db:
+            mapping = db.execute(
+                text("""
+                    SELECT id, tenant_id, user_id FROM channel_mappings
+                    WHERE channel = 'telegram' AND channel_user_id = :uid
+                    LIMIT 1
+                """),
+                {"uid": user_id},
+            ).first()
+
+        if not mapping:
+            await channel.send_answer(callback_id, text="No se encontró tu perfil. Escribe /start", show_alert=True)
+            return {"status": "ignored", "reason": "no_mapping"}
+
+        db.execute(
+            text("""
+                UPDATE channel_mappings
+                SET channel_chat_id = :chat_id
+                WHERE channel = 'telegram' AND channel_user_id = :uid
+            """),
+            {"chat_id": chat_id, "uid": user_id},
+        )
+        db.commit()
+
+        if mapping.tenant_id:
+            tenant_id = str(mapping.tenant_id)
+        else:
+            # Crear/obtener tenant default
+            default_tenant_slug = "telegram-default"
+            default_tenant = db.execute(
+                text("SELECT id FROM tenants WHERE slug = :slug LIMIT 1"),
+                {"slug": default_tenant_slug},
+            ).first()
+
+            if default_tenant:
+                tenant_id = str(default_tenant.id)
+            else:
+                from uuid import uuid4
+                default_tenant_id = uuid4()
+                tenant_id = str(default_tenant_id)
+                db.execute(
+                    text("""
+                        INSERT INTO tenants (id, name, slug, plan, is_active, created_at)
+                        VALUES (:id, 'NeuralCrew Labs', :slug, 'starter', true, NOW())
+                    """),
+                    {"id": default_tenant_id, "slug": default_tenant_slug},
+                )
+                db.commit()
+
+        # Obtener mensajes previos como contexto para generación
+        previous_messages = _get_user_recent_messages(chat_id, user_id, db)
+
+        # Ejecutar el módulo de documentos con el formato seleccionado
+        action = _ACTION_MAP.get(format_choice, "render_all")
+        params = {
+            "format": format_choice,
+        }
+
+        # Usar mensajes anteriores como base para el contenido del documento
+        if previous_messages:
+            params["reference_messages"] = previous_messages
+
+        logger.info(f"Callback format choice: {format_choice} -> {action}")
+
+        # Enviar typing indicator y mensaje de progreso
+        typing_ok = await channel.send_chat_action(chat_id)
+
+        progress_msg_id = None
+        progress_task = None
+        stop_progress = asyncio.Event()
+
+        try:
+            if typing_ok:
+                progress_task = asyncio.create_task(
+                    _progress_watcher(channel, chat_id, message_id or 0, stop_progress)
+                )
+
+            module_result = await _execute_module(
+                module_name="ai-documents",
+                action=action,
+                params=params,
+                tenant_id=tenant_id,
+                user_id=str(mapping.user_id) if mapping.user_id else user_id,
+                channel="telegram",
+                chat_id=chat_id,
+                message_text=f"Documento generado desde callback, formato: {format_choice}",
+                reply_to_message_id=message_id,
+            )
+
+            # Detener progress
+            stop_progress.set()
+            if progress_task:
+                progress_task.cancel()
+                try:
+                    await progress_task
+                except asyncio.CancelledError:
+                    pass
+
+            # Actualizar progreso a "listo"
+            if progress_msg_id is not None:
+                await channel.edit_message_text(
+                    chat_id, progress_msg_id,
+                    "\u2705 <b>\u00a1Listo!</b> Generando archivos..."
+                )
+
+            # Enviar archivo(s) generado(s)
+            return await _send_document_result(
+                channel=channel,
+                module_result=module_result,
+                chat_id=chat_id,
+                original_message_id=message_id,
+                reply_to_message_id=message_id,
+            )
+
+        except Exception as e:
+            logger.error(f"Error executando documento desde callback: {e}", exc_info=True)
+            stop_progress.set()
+            if progress_task:
+                progress_task.cancel()
+            return {
+                "status": "error",
+                "message": f"Error generando documento: {e}",
+            }
+
+    elif callback_data.startswith("regenerate:"):
+        # Regenerar último documento
+        logger.info(f"Regenerate request from user={user_id}")
+        await channel.send_answer(
+            callback_id, text="Regenerando...",
+            show_alert=False,
+        )
+        # TODO: Regenerar último documento guardado
+        return {"status": "ignored", "reason": "regen_not_implemented"}
+
+    elif callback_data.startswith("menu:"):
+        logger.info(f"Menu callback from user={user_id}")
+        await channel.send_answer(
+            callback_id, text="",
+            show_alert=False,
+        )
+        return {"status": "ignored", "reason": "menu_callback"}
+
+    elif callback_data == "ask_changes":
+        logger.info(f"Ask changes callback from user={user_id}")
+        await channel.send_answer(
+            callback_id, text="Escribe lo que quieres cambiar",
+            show_alert=True,
+        )
+        return {"status": "ignored", "reason": "ask_changes"}
+
+    return {"status": "processed"}
+
+
+def _get_user_recent_messages(chat_id: str, user_id: str, db) -> list[str]:
+    """Obtener los últimos mensajes del usuario para usar como contexto de documento."""
+    recent = db.execute(
+        text("""
+            SELECT content FROM messages
+            WHERE channel = 'telegram'
+              AND (SELECT channel_user_id FROM channel_mappings
+                   WHERE id = channel_mappings.channel_user_msg_mapping_id) = :uid
+            ORDER BY created_at DESC
+            LIMIT 10
+        """),
+        {"uid": user_id},
+    ).fetchall()
+
+    if recent:
+        return [row[0] for row in recent if row[0]][:5]  # Top 5 messages
+    return []
+
+
+# ============================================================================
+# Progress & Document sending helpers
+# ============================================================================
+
+
+async def _progress_watcher(
+    channel: "TelegramChannel",
+    chat_id: str,
+    original_msg_id: int,
+    stop: asyncio.Event,
+) -> None:
+    """Background task que actualiza el mensaje de progreso cada 3 segundos."""
+    stages = [
+        "\U0001f50d <b>Analizando solicitud...</b>",
+        "\u231b <b>Generando documento...</b>",
+        "\U0001f3a8 <b>Aplicando diseño profesional...</b>",
+        "\U0001f4c4 <b>Finalizando formato...</b>",
+    ]
+    idx = 0
+    while not stop.is_set():
+        try:
+            await channel.edit_message_text(
+                chat_id, original_msg_id, stages[idx % len(stages)]
+            )
+            idx += 1
+            stop.wait(3)  # Sleep for 3s, but can break early
+        except Exception:
+            break
+
+
+async def _send_document_result(
+    channel: "TelegramChannel",
+    module_result: dict[str, Any],
+    chat_id: str,
+    original_message_id: int | None = None,
+    reply_to_message_id: int | None = None,
+) -> dict[str, Any]:
+    """Enviar los archivos generados por ai-documents al usuario."""
+    from ai_platform.channels.telegram import _FORMAT_MIME_MAP
+
+    status = module_result.get("status", "unknown")
+
+    if status == "success":
+        formats = module_result.get("formats", {})
+        formats_to_send = list(formats.keys()) if formats else ["pdf"]
+
+        # Intentar enviar el formato principal primero
+        main_format = formats_to_send[0] if formats_to_send else "pdf"
+        main_format_bytes = module_result.get(main_format)
+
+        if main_format_bytes:
+            mime_type = _FORMAT_MIME_MAP.get(main_format, "application/octet-stream")
+            filename = f"documento.{main_format}"
+
+            # Verificar si es PDF (formato principal)
+            if main_format == "pdf":
+                resp = await channel.send_document_bytes(
+                    chat_id=chat_id,
+                    file_bytes=main_format_bytes,
+                    filename=filename,
+                    mime_type="application/pdf",
+                    caption=f"\u2705 <b>Documento generado exitosamente</b>\n\nFormato: {main_format.upper()}",
+                    reply_to_message_id=reply_to_message_id,
+                )
+                if resp and resp.get("ok"):
+                    msg_id = resp["result"].get("message_id")
+                    await _send_action_keyboard(channel, chat_id, msg_id)
+                    return resp
+
+        # Si no se pudo enviar el principal, intentar con el primer formato disponible
+        for fmt in formats_to_send:
+            file_bytes = module_result.get(fmt)
+            if file_bytes:
+                mime_type = _FORMAT_MIME_MAP.get(fmt, "application/octet-stream")
+                if mime_type.startswith("image/"):
+                    # Enviar como foto en lugar de documento
+                    caption = f"\u2705 <b>Imagen generada ({fmt.upper()})</b>"
+                    resp = await channel.send_photo(
+                        chat_id=chat_id,
+                        file_bytes=file_bytes,
+                        caption=caption,
+                        reply_to_message_id=reply_to_message_id,
+                    )
+                else:
+                    resp = await channel.send_document_bytes(
+                        chat_id=chat_id,
+                        file_bytes=file_bytes,
+                        filename=f"documento.{fmt}",
+                        mime_type=mime_type,
+                        caption=f"\u2705 <b>Documento generado ({fmt.upper()})</b>",
+                        reply_to_message_id=reply_to_message_id,
+                    )
+
+                if resp and resp.get("ok"):
+                    msg_id = resp["result"].get("message_id")
+                    await _send_action_keyboard(channel, chat_id, msg_id)
+                    return resp
+
+        return {
+            "status": "partial",
+            "message": "Documento procesado pero hubo error al enviar al usuario.",
+            "module": "ai-documents",
+        }
+
+    elif status == "failed" or "error" in module_result:
+        error_msg = module_result.get("error", "Error desconocido")
+        await channel.send_message(
+            chat_id=chat_id,
+            text=f"\u274c <b>Error al generar documento:</b>\n\n{error_msg}",
+            reply_to_message_id=reply_to_message_id,
+        )
+        return {"status": "error", "message": error_msg}
+
+    return {"status": "unknown"}
+
+
+async def _send_action_keyboard(channel: "TelegramChannel", chat_id: str, message_id: int) -> None:
+    """Enviar botones de acción debajo del documento."""
+    keyboard = {
+        "inline_keyboard": [
+            [
+                {"text": "\U0001f504 Regenerar", "callback_data": "regenerate:doc"},
+                {"text": "\U0001f4ac Pedir cambios", "callback_data": "ask_changes"},
+            ],
+            [
+                {"text": "\U0001f4ca Otro formato", "callback_data": "format:all"},
+                {"text": "\U0001f3e0 Menú", "callback_data": "menu:main"},
+            ],
+        ],
+    }
+    await channel.send_message(
+        chat_id=chat_id,
+        text="\u2705 \u00a1Documento generado con \u00e9xito!",
+        reply_markup=keyboard,
+        reply_to_message_id=message_id,
+    )
+
+
+def _build_format_selection_keyboard() -> dict:
+    """Construir el teclado de selección de formato de documento."""
+    return _FORMAT_KEYBOARD.copy()
+
+
+async def _send_format_selection(
+    channel: "TelegramChannel",
+    chat_id: str,
+    reply_to_message_id: int | None = None,
+) -> dict[str, Any]:
+    """Enviar mensaje con botones de selección de formato de documento."""
+    keyboard = _build_format_selection_keyboard()
+    response = await channel.send_message(
+        chat_id=chat_id,
+        text=(
+            "\U0001f4c4 <b>Generar Documento</b>\n\n"
+            "He detectado que quieres generar un documento. "
+            "Elige el formato:"
+        ),
+        reply_markup=keyboard,
+        reply_to_message_id=reply_to_message_id,
+    )
+    return response

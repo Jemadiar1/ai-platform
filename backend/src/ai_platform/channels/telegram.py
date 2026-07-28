@@ -6,10 +6,9 @@ Soporta:
 - Notas de voz -> transcripción por OpenAI Whisper
 - Documentos (PDF, DOCX, XLSX) -> analisis por Odin
 - Imagenes con caption
-
-Configuración:
-- TELEGRAM_BOT_TOKEN: Token del bot desde @BotFather
-- TELEGRAM_WEBHOOK_SECRET: Secret token para validar webhooks
+- Typing indicators (sendChatAction)
+- Edición de mensajes (editMessageText) para progreso animado
+- Teclados inline para selección de formato de documento
 """
 
 import asyncio
@@ -18,6 +17,7 @@ import logging
 import os
 import tempfile
 from typing import Any
+from uuid import uuid4
 
 import httpx
 from openai import AsyncOpenAI
@@ -26,6 +26,46 @@ from ai_platform.channels.base import BaseChannel
 from ai_platform.core.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+# =========================================================================
+# Document format selection keyboard
+# =========================================================================
+
+_FORMAT_KEYBOARD: dict = {
+    "inline_keyboard": [
+        [
+            {"text": "\U0001f4c4 DOCX", "callback_data": "format:docx"},
+            {"text": "\U0001f4ca XLSX", "callback_data": "format:xlsx"},
+            {"text": "\U0001f4c1 PPTX", "callback_data": "format:pptx"},
+        ],
+        [
+            {"text": "\U0001f5bc\ufe0f PNG", "callback_data": "format:png"},
+            {"text": "\U0001f4d5 PDF", "callback_data": "format:pdf"},
+        ],
+        [
+            {"text": "\U0001f4e6 Todos", "callback_data": "format:all"},
+        ],
+    ],
+}
+
+# Format to file type mapping (for sendDocument vs sendPhoto)
+_FORMAT_MIME_MAP: dict[str, str] = {
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "pdf": "application/pdf",
+    "png": "image/png",
+}
+
+# Action mapping for format selection
+_ACTION_MAP: dict[str, str] = {
+    "all": "render_all",
+    "docx": "render_docx",
+    "xlsx": "render_xlsx",
+    "pptx": "render_pptx",
+    "png": "render_png",
+    "pdf": "render_pdf",
+}
 
 
 class TelegramChannel(BaseChannel):
@@ -768,6 +808,173 @@ class TelegramChannel(BaseChannel):
 
     def _chunk_message(self, text: str, max_length: int = 4096) -> list[str]:
         return super()._chunk_message(text, max_length=max_length)
+
+    # =========================================================================
+    # Typing indicator (sendChatAction)
+    # =========================================================================
+
+    async def send_chat_action(self, chat_id: str, action: str = "typing") -> dict:
+        """Enviar un indicador de escritura u otra acción de chat a Telegram."""
+        if not self.token or not chat_id:
+            logger.warning("send_chat_action: token o chat_id ausentes")
+            return {"status": "error", "message": "token/chat_id ausentes"}
+
+        url = f"{self.base_url}/sendChatAction"
+        payload = {"chat_id": chat_id, "action": action}
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                if data.get("ok"):
+                    return data
+                error_desc = data.get("description", "Error desconocido")
+                logger.warning(f"sendChatAction falló: {error_desc}")
+                return {"status": "error", "message": error_desc}
+        except Exception as e:
+            logger.warning(f"Error en sendChatAction: {e}")
+            return {"status": "error", "message": str(e)}
+
+    # =========================================================================
+    # Message editing (editMessageText)
+    # =========================================================================
+
+    async def edit_message_text(
+        self,
+        chat_id: str,
+        message_id: int,
+        text: str,
+        parse_mode: str = "HTML",
+    ) -> dict:
+        """Editar un mensaje existente. Usado para indicador de progreso."""
+        if not self.token or not chat_id:
+            return {"status": "error", "message": "token/chat_id ausentes"}
+
+        url = f"{self.base_url}/editMessageText"
+        payload = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": text,
+            "parse_mode": parse_mode,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                if data.get("ok"):
+                    logger.debug(f"Mensaje editado: chat={chat_id}, msg={message_id}")
+                    return data
+                error_code = data.get("error_code")
+                if error_code == 400:
+                    logger.debug(f"editMessageText ignorado (posiblemente mensaje eliminado)")
+                    return {"status": "ignored", "message": data.get("description", "")}
+                if error_code == 403:
+                    logger.debug(f"editMessageText no permitido: {data.get('description')}")
+                    return {"status": "ignored", "message": data.get("description", "")}
+                logger.warning(f"editMessageText falló: {data.get('description')}")
+                return {"status": "error", "message": data.get("description", "Error desconocido")}
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 400:
+                logger.debug(f"editMessageText HTTP 400: {e.response.text}")
+                return {"status": "ignored", "message": "mensaje no encontrado o eliminado"}
+            logger.error(f"Error HTTP en editMessageText: {e}")
+            return {"status": "error", "message": str(e)}
+        except Exception as e:
+            logger.warning(f"Error inesperado en editMessageText: {e}")
+            return {"status": "error", "message": str(e)}
+
+    # =========================================================================
+    # Send document from bytes
+    # =========================================================================
+
+    async def send_document_bytes(
+        self,
+        chat_id: str,
+        file_bytes: bytes,
+        filename: str,
+        mime_type: str = "application/octet-stream",
+        caption: str = "",
+        reply_to_message_id: int | None = None,
+    ) -> dict:
+        """Enviar un documento directamente desde bytes."""
+        if not self.token or not chat_id:
+            return {"status": "error", "message": "token/chat_id ausentes"}
+
+        url = f"{self.base_url}/sendDocument"
+        files = {"document": (filename, file_bytes, mime_type)}
+        data = {"chat_id": chat_id, "file_parse_mode": None}
+        if caption:
+            data["caption"] = caption
+        if reply_to_message_id:
+            data["reply_to_message_id"] = reply_to_message_id
+
+        last_error = None
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.post(url, files=files, data=data)
+                    response.raise_for_status()
+                    result = response.json()
+                    if result.get("ok"):
+                        logger.info(f"Documento enviado: {filename} to {chat_id}")
+                        return result
+                    logger.warning(f"sendDocument falló: {result.get('description')}")
+            except httpx.HTTPStatusError as e:
+                last_error = e
+                logger.warning(f"Error HTTP enviando documento (intento {attempt+1}/3): {e.response.text}")
+                await asyncio.sleep(2**attempt)
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Error enviando documento (intento {attempt+1}/3): {e}")
+                await asyncio.sleep(2**attempt)
+
+        logger.error(f"Error enviando documento tras 3 intentos: {last_error}")
+        return {"status": "error", "message": str(last_error)}
+
+    async def send_photo(
+        self,
+        chat_id: str,
+        file_bytes: bytes,
+        caption: str = "",
+        reply_to_message_id: int | None = None,
+    ) -> dict:
+        """Enviar una foto directamente desde bytes."""
+        if not self.token or not chat_id:
+            return {"status": "error", "message": "token/chat_id ausentes"}
+
+        url = f"{self.base_url}/sendPhoto"
+        files = {"photo": (file_bytes, "image/png")}
+        data = {"chat_id": chat_id}
+        if caption:
+            data["caption"] = caption
+        if reply_to_message_id:
+            data["reply_to_message_id"] = reply_to_message_id
+
+        last_error = None
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.post(url, files=files, data=data)
+                    response.raise_for_status()
+                    result = response.json()
+                    if result.get("ok"):
+                        logger.info(f"Foto enviada to {chat_id}")
+                        return result
+                    logger.warning(f"sendPhoto falló: {result.get('description')}")
+            except httpx.HTTPStatusError as e:
+                last_error = e
+                logger.warning(f"Error HTTP enviando foto (intento {attempt+1}/3): {e.response.text}")
+                await asyncio.sleep(2**attempt)
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Error enviando foto (intento {attempt+1}/3): {e}")
+                await asyncio.sleep(2**attempt)
+
+        logger.error(f"Error enviando foto tras 3 intentos: {last_error}")
+        return {"status": "error", "message": str(last_error)}
 
 
 def create_telegram_keyboard(buttons: list[list[str]], url: str | None = None) -> dict:
