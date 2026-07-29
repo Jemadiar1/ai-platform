@@ -81,6 +81,7 @@ class Handler:
         """Synthesize rich structured markdown if content lacks markdown headings or is raw chat history."""
         content = params.get("content", "") or params.get("prompt", "") or ""
         subject = params.get("subject", "") or params.get("title", "") or "Documento Profesional"
+        fmt = (params.get("format") or params.get("file_type") or "docx").lower()
 
         has_headings = "# " in content or "## " in content or "### " in content
         is_short_or_chat = len(content.strip()) < 150 or "USER:" in content or content == subject
@@ -88,19 +89,31 @@ class Handler:
         if not has_headings or is_short_or_chat:
             from ai_platform.orchestrator.llm_client import get_llm_client
 
-            sys_prompt = (
-                "Eres el redactor ejecutivo principal de NeuralCrew Labs.\n"
-                "Tu objetivo es redactar un DOCUMENTO COMPLETO Y PROFESIONAL en formato Markdown estricto.\n"
-                "Debes redactar contenido real, detallado, rico y útil. NUNCA devuelvas solo plantillas vacías o listas vacías.\n\n"
-                "REGLAS DE ESTRUCTURA MARKDOWN:\n"
-                "1. Encabezado de Nivel 1: '# Título Principal del Documento'\n"
-                "2. '## Resumen Ejecutivo': Un resumen bien redactado del propósito y los objetivos.\n"
-                "3. '## Especificaciones Técnicas y Alcance': Detalles técnicos, tono, público objetivo y requisitos.\n"
-                "4. '## Contenido Principal / Guión': Si es un guión, incluye los personajes en **negrita**, acotaciones de escena entre *paréntesis* y diálogos redactados completos. Si es un informe, incluye secciones y análisis profundo.\n"
-                "5. '## Tabla de Métricas y Presupuesto': Una tabla Markdown completa (| Columna 1 | Columna 2 | Columna 3 |) con datos razonables.\n"
-                "6. '## Conclusiones y Próximos Pasos': Recomendaciones de ejecución.\n\n"
-                "Redacta todo en español elegante y corporativo."
-            )
+            if "xlsx" in fmt or "excel" in fmt or "tabla" in fmt or "hoja" in fmt:
+                sys_prompt = (
+                    "Eres el especialista principal en ciencia de datos y modelos financieros de NeuralCrew Labs.\n"
+                    "Tu objetivo es redactar un REPORTE Y MATRIZ TABULAR COMPLETA EN MARKDOWN para exportación a Excel (.xlsx).\n\n"
+                    "REGLAS OBLIGATORIAS:\n"
+                    "1. Encabezado de Nivel 1: '# Resumen Financiero y Métricas'\n"
+                    "2. '## Matriz de Datos Principal': DEBES incluir una TABLA MARKDOWN COMPLETA (| Concepto | Categoría | Valor | Estado | Presupuesto |) con datos y números reales.\n"
+                    "3. '## Desglose de Operaciones': Una segunda tabla Markdown detallada con registros u operaciones relativas al tema.\n"
+                    "4. '## Notas Ejecutivas': Resumen explicativo de las métricas presentadas.\n\n"
+                    "Redacta todo con números reales y tablas Markdown estrictas."
+                )
+            else:
+                sys_prompt = (
+                    "Eres el redactor ejecutivo principal de NeuralCrew Labs.\n"
+                    "Tu objetivo es redactar un DOCUMENTO COMPLETO Y PROFESIONAL en formato Markdown estricto.\n"
+                    "Debes redactar contenido real, detallado, rico y útil. NUNCA devuelvas solo plantillas vacías o listas vacías.\n\n"
+                    "REGLAS DE ESTRUCTURA MARKDOWN:\n"
+                    "1. Encabezado de Nivel 1: '# Título Principal del Documento'\n"
+                    "2. '## Resumen Ejecutivo': Un resumen bien redactado del propósito y los objetivos.\n"
+                    "3. '## Especificaciones Técnicas y Alcance': Detalles técnicos, tono, público objetivo y requisitos.\n"
+                    "4. '## Contenido Principal / Guión': Si es un guión, incluye los personajes en **negrita**, acotaciones de escena entre *paréntesis* y diálogos redactados completos. Si es un informe, incluye secciones y análisis profundo.\n"
+                    "5. '## Tabla de Métricas y Presupuesto': Una tabla Markdown completa (| Columna 1 | Columna 2 | Columna 3 |) con datos razonables.\n"
+                    "6. '## Conclusiones y Próximos Pasos': Recomendaciones de ejecución.\n\n"
+                    "Redacta todo en español elegante y corporativo."
+                )
 
             user_prompt = f"Tema o Requerimiento del Usuario: {subject}\n\nContexto / Historial previo:\n{content}"
 

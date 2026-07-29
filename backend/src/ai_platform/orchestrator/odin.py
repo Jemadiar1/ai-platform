@@ -126,7 +126,8 @@ class Odin:
             "información", "informacion", "neuralcrew", "ayuda", "help", "inicio",
             "start", "gracias", "contacto", "que ofrecen", "qué ofrecen"
         ]
-        if any(k in clean_p for k in conversational_keywords):
+        is_explicit_doc_action = any(x in clean_p for x in ["crea", "crear", "genera", "generar", "redacta", "redactar", "haz", "hacer", "escribe", "escribir", "exporta", "exportar", "descargar", "word", "excel", "docx", "xlsx", "pdf"])
+        if any(k == clean_p or (k in clean_p and len(clean_p.split()) <= 4) for k in conversational_keywords) and not is_explicit_doc_action:
             session = await self.session_manager.get_or_create(
                 tenant_id=tenant_id,
                 user_id=user_id,

@@ -631,7 +631,11 @@ async def _process_channel_message(
             logger.info(f"ODIN redirect: {module_name!r} → {updated_module!r}")
             module_name = updated_module
 
-        if module_name == "ai-documents" or "formats" in module_result or any(k in module_result for k in ("docx", "pdf", "xlsx", "pptx", "png")):
+        # Desenvolver resultado si Odin lo envolvió en {'status': 'completed', 'result': {...}}
+        real_result = module_result.get("result") if isinstance(module_result.get("result"), dict) else module_result
+
+        is_doc_module = module_name == "ai-documents" or "formats" in real_result or any(k in real_result for k in ("docx", "pdf", "xlsx", "pptx", "png"))
+        if is_doc_module:
             from ai_platform.channels import TelegramChannel, WhatsAppChannel, DiscordChannel
             channel_map = {
                 "telegram": TelegramChannel,
@@ -642,14 +646,14 @@ async def _process_channel_message(
             chan_inst = chan_cls()
 
             # 1. Enviar el contenido del guión/documento en texto plano al chat
-            text_content = module_result.get("content") or module_result.get("text") or module_result.get("markdown") or ""
+            text_content = real_result.get("content") or real_result.get("text") or real_result.get("markdown") or ""
             if isinstance(text_content, str) and len(text_content.strip()) > 50 and "USER:" not in text_content:
                 header = "📝 <b>Contenido Generado:</b>\n\n"
                 await _send_to_channel(channel, chat_id, header + text_content[:3500], reply_to_message_id=reply_to_message_id)
 
-            # 2. Enviar el archivo binario (.docx, .pdf, etc.)
+            # 2. Enviar el archivo binario (.docx, .pdf, .xlsx, etc.)
             try:
-                await _send_document_result(chan_inst, module_result, chat_id, reply_to_message_id=reply_to_message_id)
+                await _send_document_result(chan_inst, real_result, chat_id, reply_to_message_id=reply_to_message_id)
             except Exception as e:
                 logger.error(f"Error enviando documento al canal: {e}", exc_info=True)
                 response_text = _extract_response_text(module_result) or "Documento generado exitosamente."
@@ -1285,6 +1289,9 @@ async def _send_document_result(
     """Enviar los archivos generados por ai-documents al usuario."""
     from ai_platform.channels.telegram import _FORMAT_MIME_MAP
 
+    if isinstance(module_result.get("result"), dict):
+        module_result = module_result["result"]
+
     status = module_result.get("status", "success")
     doc_keys = ["docx", "pdf", "xlsx", "pptx", "png"]
 
@@ -1301,83 +1308,49 @@ async def _send_document_result(
         if not formats_to_send and module_result.get("format"):
             formats_to_send = [module_result["format"]]
 
-    if status == "success" or formats_to_send:
-        # Intentar enviar el formato principal primero
-        main_format = formats_to_send[0] if formats_to_send else "docx"
-        main_format_bytes = module_result.get(main_format) or formats.get(main_format)
-
-        if main_format_bytes:
-            mime_type = _FORMAT_MIME_MAP.get(main_format, "application/octet-stream")
-            filename = f"documento.{main_format}"
-
-            # Verificar si es PDF (formato principal)
-            if main_format == "pdf":
-                resp = await channel.send_document_bytes(
+    for fmt in formats_to_send:
+        file_bytes = module_result.get(fmt) or formats.get(fmt)
+        if isinstance(file_bytes, bytes):
+            mime_type = _FORMAT_MIME_MAP.get(fmt, "application/octet-stream")
+            filename = f"documento.{fmt}"
+            if mime_type.startswith("image/"):
+                caption = f"✅ <b>Imagen generada ({fmt.upper()})</b>"
+                resp = await channel.send_photo(
                     chat_id=chat_id,
-                    file_bytes=main_format_bytes,
-                    filename=filename,
-                    mime_type="application/pdf",
-                    caption=f"\u2705 <b>Documento generado exitosamente</b>\n\nFormato: {main_format.upper()}",
+                    file_bytes=file_bytes,
+                    caption=caption,
                     reply_to_message_id=reply_to_message_id,
                 )
-                if resp and resp.get("ok"):
-                    msg_id = resp["result"].get("message_id")
-                    await _send_action_keyboard(channel, chat_id, msg_id)
-                    return resp
+            else:
+                doc_caption = (
+                    f"✅ <b>Documento Profesional Generado ({fmt.upper()})</b>\n\n"
+                    f"📄 <i>El archivo ha sido formateado con plantilla corporativa.</i>\n\n"
+                    f"💡 <b>¿Deseas personalizar algún aspecto?</b>\n"
+                    f"• Cambiar el tono (corporativo, persuasivo, conversacional)\n"
+                    f"• Agregar datos específicos de tu marca o negocio\n"
+                    f"• Incluir tablas de presupuesto o métricas adicionales"
+                )
+                resp = await channel.send_document_bytes(
+                    chat_id=chat_id,
+                    file_bytes=file_bytes,
+                    filename=filename,
+                    mime_type=mime_type,
+                    caption=doc_caption,
+                    reply_to_message_id=reply_to_message_id,
+                )
+            if resp and resp.get("ok"):
+                return resp
 
-        # Si no se pudo enviar el principal, intentar con el primer formato disponible
-        for fmt in formats_to_send:
-            file_bytes = module_result.get(fmt)
-            if file_bytes:
-                mime_type = _FORMAT_MIME_MAP.get(fmt, "application/octet-stream")
-                if mime_type.startswith("image/"):
-                    # Enviar como foto en lugar de documento
-                    caption = f"\u2705 <b>Imagen generada ({fmt.upper()})</b>"
-                    resp = await channel.send_photo(
-                        chat_id=chat_id,
-                        file_bytes=file_bytes,
-                        caption=caption,
-                        reply_to_message_id=reply_to_message_id,
-                    )
-                else:
-                    doc_caption = (
-                        f"\u2705 <b>Documento Profesional Generado ({fmt.upper()})</b>\n\n"
-                        f"\U0001f4c4 <i>El archivo ha sido formateado con plantilla corporativa.</i>\n\n"
-                        f"\U0001f4a1 <b>¿Deseas personalizar algún aspecto?</b>\n"
-                        f"• Cambiar el tono (corporativo, persuasivo, conversacional)\n"
-                        f"• Agregar datos específicos de tu marca o negocio\n"
-                        f"• Incluir tablas de presupuesto o métricas adicionales"
-                    )
-                    resp = await channel.send_document_bytes(
-                        chat_id=chat_id,
-                        file_bytes=file_bytes,
-                        filename=f"documento.{fmt}",
-                        mime_type=mime_type,
-                        caption=doc_caption,
-                        reply_to_message_id=reply_to_message_id,
-                    )
-
-                if resp and resp.get("ok"):
-                    msg_id = resp["result"].get("message_id")
-                    await _send_action_keyboard(channel, chat_id, msg_id)
-                    return resp
-
-        return {
-            "status": "partial",
-            "message": "Documento procesado pero hubo error al enviar al usuario.",
-            "module": "ai-documents",
-        }
-
-    elif status == "failed" or "error" in module_result:
+    if status == "failed" or "error" in module_result:
         error_msg = module_result.get("error", "Error desconocido")
         await channel.send_message(
             chat_id=chat_id,
-            text=f"\u274c <b>Error al generar documento:</b>\n\n{error_msg}",
+            text=f"❌ <b>Error al generar documento:</b>\n\n{error_msg}",
             reply_to_message_id=reply_to_message_id,
         )
         return {"status": "error", "message": error_msg}
 
-    return {"status": "unknown"}
+    return {"status": "completed"}
 
 
 async def _send_action_keyboard(channel: "TelegramChannel", chat_id: str, message_id: int) -> None:
