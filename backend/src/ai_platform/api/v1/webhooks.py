@@ -73,65 +73,76 @@ async def telegram_webhook(request: Request):
     if not message:
         return {"status": "ignored", "reason": "sin_mensaje"}
 
-    # Extraer con soporte de archivos adjuntos
-    extracted = await channel.extract_message(update_data)
-
-    user_id = extracted.get("user_id", "")
-    user_name = extracted.get("user_name", "unknown")
-    chat_id = extracted.get("chat_id", "")
-    message_text = extracted.get("message_text", "")
-    attachments = extracted.get("attachments", [])
-
-    reply_to_message_id = message.get("reply_to_message", {}).get("message_id") or message.get("message_id")
-
-    # If there's a photo, download it and get a description via vision model
-    if attachments:
-        photos = [a for a in attachments if a.get("type") == "photo" and a.get("file_id")]
-        photo_descriptions = []
-        if photos:
-            from ai_platform.orchestrator.llm_client import LLMClient
-
-            llm_client = LLMClient()
-            try:
-                for photo in photos:
-                    photo_bytes, _ = await channel.download_photo(photo["file_id"])
-                    if photo_bytes:
-                        desc = await llm_client.vision_chat(
-                            "Describe esta imagen en español con detalle. Si es un gráfico, extrae los datos clave. Si es una escena, describe lo que se ve.",
-                            photo_bytes,
-                        )
-                        text = desc.get("text", "") if isinstance(desc, dict) else str(desc)
-                        if text and text.strip():
-                            photo_descriptions.append(text)
-            finally:
-                try:
-                    await llm_client.close()
-                except Exception:
-                    pass
-
-        # Procesar archivos adjuntos (transcribir voz, descargar documentos, etc.)
-        message_text, reply_to_message_id = await _process_tg_attachments(
-            channel=channel,
-            user_id=user_id,
-            chat_id=chat_id,
-            message_text=message_text,
-            attachments=attachments,
-            photo_descriptions=photo_descriptions,
-            reply_to_message_id=reply_to_message_id,
-        )
-
-    logger.info(f"Mensaje entrante Telegram: user={user_id}, text={message_text[:100]}, files={len(attachments)}")
-
-    # Activar indicador de escritura inmediatamente para UX fluida
-    try:
-        await channel.send_chat_action(chat_id, "typing")
-    except Exception:
-        pass
-
-    # Responder inmediatamente a Telegram para evitar timeout (25s)
-    # El procesamiento real se ejecuta en background (manteniendo referencia fuerte)
+    # Responder inmediatamente a Telegram en < 1ms para garantizar que NUNCA venza el timeout
     bg_task = asyncio.create_task(
-        _process_channel_message(
+        _handle_telegram_message_bg(
+            update_data=update_data,
+            channel=channel,
+        )
+    )
+    _BACKGROUND_TASKS.add(bg_task)
+    bg_task.add_done_callback(_BACKGROUND_TASKS.discard)
+
+    return {"status": "ok", "message": "received"}
+
+
+async def _handle_telegram_message_bg(update_data: dict, channel: Any) -> None:
+    """Worker en segundo plano para procesar mensaje de Telegram sin bloquear la respuesta HTTP."""
+    logger = logging.getLogger(__name__)
+    try:
+        message = (
+            update_data.get("message")
+            or update_data.get("edited_message")
+            or update_data.get("channel_post")
+            or {}
+        )
+        extracted = await channel.extract_message(update_data)
+
+        user_id = extracted.get("user_id", "")
+        user_name = extracted.get("user_name", "unknown")
+        chat_id = extracted.get("chat_id", "")
+        message_text = extracted.get("message_text", "")
+        attachments = extracted.get("attachments", [])
+
+        reply_to_message_id = message.get("reply_to_message", {}).get("message_id") or message.get("message_id")
+
+        if attachments:
+            photos = [a for a in attachments if a.get("type") == "photo" and a.get("file_id")]
+            photo_descriptions = []
+            if photos:
+                from ai_platform.orchestrator.llm_client import LLMClient
+
+                llm_client = LLMClient()
+                try:
+                    for photo in photos:
+                        photo_bytes, _ = await channel.download_photo(photo["file_id"])
+                        if photo_bytes:
+                            desc = await llm_client.vision_chat(
+                                "Describe esta imagen en español con detalle.",
+                                photo_bytes,
+                            )
+                            text = desc.get("text", "") if isinstance(desc, dict) else str(desc)
+                            if text and text.strip():
+                                photo_descriptions.append(text)
+                finally:
+                    try:
+                        await llm_client.close()
+                    except Exception:
+                        pass
+
+            message_text, reply_to_message_id = await _process_tg_attachments(
+                channel=channel,
+                user_id=user_id,
+                chat_id=chat_id,
+                message_text=message_text,
+                attachments=attachments,
+                photo_descriptions=photo_descriptions,
+                reply_to_message_id=reply_to_message_id,
+            )
+
+        logger.info(f"Mensaje entrante Telegram: user={user_id}, text={message_text[:100]}, files={len(attachments)}")
+
+        await _process_channel_message(
             channel="telegram",
             user_id=user_id,
             user_name=user_name,
@@ -139,10 +150,8 @@ async def telegram_webhook(request: Request):
             message_text=message_text,
             reply_to_message_id=reply_to_message_id,
         )
-    )
-    _BACKGROUND_TASKS.add(bg_task)
-    bg_task.add_done_callback(_BACKGROUND_TASKS.discard)
-    return {"status": "ok", "message": "received"}
+    except Exception as e:
+        logger.error(f"Error procesando mensaje de Telegram en background: {e}", exc_info=True)
 
 
 @router.post("/webhooks/whatsapp")
