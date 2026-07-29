@@ -1,4 +1,5 @@
-﻿"""
+import inspect
+"""
 Handler para el módulo ai-web.
 
 Genera páginas web con IA: landing pages, sitios corporativos,

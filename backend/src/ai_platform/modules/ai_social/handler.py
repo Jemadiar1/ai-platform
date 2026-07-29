@@ -1,4 +1,5 @@
-﻿"""
+import inspect
+"""
 Handler para el módulo ai-social.
 
 Gestiona redes sociales con IA: creación de posts, análisis de engagement,

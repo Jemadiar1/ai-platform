@@ -1,3 +1,4 @@
+import inspect
 """
 Module NeuralCrew Connect - Full implementation with message extraction fallback.
 """
@@ -34,14 +35,26 @@ class Handler:
 
         logger.info(f"Ejecutando acción {action}")
         func = actions[action]
-        if asyncio.iscoroutinefunction(func):
+
+        if inspect.iscoroutinefunction(func) or asyncio.iscoroutinefunction(func):
+
             result = await func(payload)
+
         else:
-            result = func(payload)
+
+            res = func(payload)
+
+            if inspect.isawaitable(res) or asyncio.iscoroutine(res):
+
+                result = await res
+
+            else:
+
+                result = res
         logger.info(f"Acción {action} completada")
         return {"action": action, "status": "success", "result": result, "timestamp": datetime.utcnow().isoformat()}
 
-    async def _extract_message(self, payload: dict) -> tuple[str, str, str]:
+    def _extract_message(self, payload: dict) -> tuple[str, str, str]:
         """
         Extraer message_text, tenant_id y user_id del payload.
         

@@ -1,3 +1,4 @@
+import inspect
 """
 Handler para el módulo ai-analytics.
 

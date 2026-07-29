@@ -1,4 +1,5 @@
-﻿"""
+import inspect
+"""
 Handler para el módulo ai-leads.
 
 Captura y califica leads con IA: generación de leads calificados,

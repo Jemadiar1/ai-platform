@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>{{ title }}</title>
+<style>
+@page { margin: 2.5cm; }
+body {
+  font-family: {{ font }}; font-size: 11pt; line-height: 1.6;
+  color: {{ font_color }}; background: {{ bg }};
+}
+.page-header {
+  background: {{ primary }}; color: white;
+  padding: 24px 32px;
+}
+.page-header h1 { margin: 0 0 4px 0; font-size: 22pt; }
+.page-header .meta { opacity: .85; font-size: 9pt; }
+.content { padding: 24px 32px; }
+.content h2 { color: {{ primary }}; border-bottom: 2px solid {{ primary }}; padding-bottom: 6px; }
+.content h3 { color: {{ secondary }}; }
+table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+th { background: {{ primary }}; color: white; padding: 8px 12px; text-align: left; }
+td { border: 1px solid #ddd; padding: 8px 12px; }
+tr:nth-child(even) { background: #fafafa; }
+.footer {
+  margin-top: 24px; padding: 12px 32px; border-top: 1px solid #ddd;
+  font-size: 8pt; color: {{ secondary }}; text-align: center;
+}
+</style>
+</head>
+<body>
+<div class="page-header">
+  <h1>{{ title }}</h1>
+  <div class="meta">Audiencia: {{ audience }} &nbsp;|&nbsp; {{ generated_by }}</div>
+</div>
+<div class="content">
+  {{ content | safe }}
+</div>
+<div class="footer">
+  {{ company }} &nbsp;|&nbsp; {{ title }} &nbsp;|&nbsp; Generado por {{ generated_by }}
+</div>
+</body>
+</html>

@@ -1,4 +1,5 @@
-﻿"""
+import inspect
+"""
 Handler para el módulo ai-content.
 
 Genera contenido de marketing con IA: blogs, emails, copy publicitario,

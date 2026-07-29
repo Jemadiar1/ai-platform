@@ -1,4 +1,5 @@
-﻿"""
+import inspect
+"""
 Handler para el módulo ai-ads.
 
 Gestiona campañas publicitarias con IA: creación de campañas,
