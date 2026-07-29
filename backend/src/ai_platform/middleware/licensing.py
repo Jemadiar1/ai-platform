@@ -43,8 +43,8 @@ from ai_platform.database import session_factory
 # Mapa de agentes habilitados por plan default
 PLAN_AGENTS: dict[str, set[str]] = {
     "free": {"ai-connect"},
-    "starter": {"ai-connect", "ai-analytics"},
-    "pro": {"ai-connect", "ai-analytics", "ai-content", "ai-social"},
+    "starter": {"ai-connect", "ai-analytics", "ai-documents"},
+    "pro": {"ai-connect", "ai-analytics", "ai-content", "ai-social", "ai-documents"},
     "enterprise": {
         "ai-connect",
         "ai-analytics",
@@ -53,6 +53,7 @@ PLAN_AGENTS: dict[str, set[str]] = {
         "ai-leads",
         "ai-ads",
         "ai-web",
+        "ai-documents",
     },
 }
 

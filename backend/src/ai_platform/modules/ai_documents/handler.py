@@ -39,7 +39,14 @@ class Handler:
             "render_png": self._render_png,
             "render_pdf": self._render_pdf,
             "render_all": self._render_all,
-            "default": self._default,
+            "generate_document": self._render_document,
+            "create_document": self._render_document,
+            "generate_docx": self._render_docx,
+            "create_docx": self._render_docx,
+            "generate_xlsx": self._render_xlsx,
+            "generate_pptx": self._render_pptx,
+            "generate_pdf": self._render_pdf,
+            "default": self._render_document,
         }
 
         handler = dispatch.get(action)
@@ -105,6 +112,19 @@ class Handler:
 
         g = Generators(tenant_id)
         return g.render_all(tenant_id, params)
+
+    def _render_document(self, params: dict, metadata: dict, tenant_id: str) -> dict:
+        fmt = (params.get("format") or params.get("file_type") or params.get("type") or "docx").lower()
+        if "xlsx" in fmt or "excel" in fmt or "sheet" in fmt:
+            return self._render_xlsx(params, metadata, tenant_id)
+        elif "pptx" in fmt or "powerpoint" in fmt or "presentation" in fmt or "slide" in fmt:
+            return self._render_pptx(params, metadata, tenant_id)
+        elif "pdf" in fmt:
+            return self._render_pdf(params, metadata, tenant_id)
+        elif "png" in fmt or "image" in fmt:
+            return self._render_png(params, metadata, tenant_id)
+        else:
+            return self._render_docx(params, metadata, tenant_id)
 
     # =========================================================================
     # Fallback

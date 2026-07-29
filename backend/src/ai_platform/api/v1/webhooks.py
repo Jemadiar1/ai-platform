@@ -498,7 +498,7 @@ async def _process_channel_message(
                 db.execute(
                     text("""
                         INSERT INTO tenants (id, name, slug, plan, is_active, created_at)
-                        VALUES (:id, 'NeuralCrew Labs', :slug, 'starter', true, NOW())
+                        VALUES (:id, 'NeuralCrew Labs', :slug, 'enterprise', true, NOW())
                     """),
                     {"id": default_tenant_id, "slug": default_tenant_slug},
                 )
@@ -629,14 +629,28 @@ async def _process_channel_message(
         logger.info(f"ODIN redirect: {module_name!r} → {updated_module!r}")
         module_name = updated_module
 
-    logger.info(f"MODULE_RESULT keys: {list(module_result.keys())}")
+    if module_name == "ai-documents" or "formats" in module_result or any(k in module_result for k in ("docx", "pdf", "xlsx", "pptx", "png")):
+        try:
+            from ai_platform.channels import TelegramChannel, WhatsAppChannel, DiscordChannel
+            channel_map = {
+                "telegram": TelegramChannel,
+                "whatsapp": WhatsAppChannel,
+                "discord": DiscordChannel,
+            }
+            chan_cls = channel_map.get(channel, TelegramChannel)
+            chan_inst = chan_cls()
+            await _send_document_response(module_result, chan_inst, chat_id, reply_to_message_id=reply_to_message_id)
+        except Exception as e:
+            logger.error(f"Error enviando documento al canal: {e}", exc_info=True)
+            response_text = _extract_response_text(module_result) or "Documento generado exitosamente."
+            await _send_to_channel(channel, chat_id, response_text, reply_to_message_id=reply_to_message_id)
+    else:
+        response_text = _extract_response_text(module_result)
+        if not response_text or not response_text.strip():
+            response_text = "¡Hola! Soy el asistente IA de NeuralCrew Labs. ¿En qué puedo ayudarte hoy?"
 
-    response_text = _extract_response_text(module_result)
-    if not response_text or not response_text.strip():
-        response_text = "¡Hola! Soy el asistente IA de NeuralCrew Labs. ¿En qué puedo ayudarte hoy?"
-
-    # Enviar la respuesta única directamente al canal
-    await _send_to_channel(channel, chat_id, response_text, reply_to_message_id=reply_to_message_id)
+        # Enviar la respuesta única directamente al canal
+        await _send_to_channel(channel, chat_id, response_text, reply_to_message_id=reply_to_message_id)
 
     return {
         "status": "success",
