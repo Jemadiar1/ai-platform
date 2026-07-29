@@ -183,17 +183,24 @@ class Handler:
         return res
 
     async def _render_document(self, params: dict, metadata: dict, tenant_id: str) -> dict:
-        params = await self._ensure_rich_content(params, tenant_id)
-        fmt = (params.get("format") or params.get("file_type") or params.get("type") or "docx").lower()
-        if "xlsx" in fmt or "excel" in fmt or "sheet" in fmt:
+        raw_fmt = (params.get("format") or params.get("file_type") or params.get("type") or params.get("fmt") or "").lower()
+        prompt_txt = f"{params.get('subject', '')} {params.get('title', '')} {params.get('prompt', '')}".lower()
+        combined_txt = f"{raw_fmt} {prompt_txt}"
+
+        if any(k in combined_txt for k in ["xlsx", "excel", "sheet", "hoja de calculo", "hoja de cálculo"]):
+            params["format"] = "xlsx"
             return await self._render_xlsx(params, metadata, tenant_id)
-        elif "pptx" in fmt or "powerpoint" in fmt or "presentation" in fmt or "slide" in fmt:
+        elif any(k in combined_txt for k in ["pptx", "powerpoint", "presentation", "diapositiva", "diapositivas"]):
+            params["format"] = "pptx"
             return await self._render_pptx(params, metadata, tenant_id)
-        elif "pdf" in fmt:
+        elif "pdf" in combined_txt:
+            params["format"] = "pdf"
             return await self._render_pdf(params, metadata, tenant_id)
-        elif "png" in fmt or "image" in fmt:
+        elif any(k in combined_txt for k in ["png", "image", "imagen"]):
+            params["format"] = "png"
             return await self._render_png(params, metadata, tenant_id)
         else:
+            params["format"] = "docx"
             return await self._render_docx(params, metadata, tenant_id)
 
     # =========================================================================
