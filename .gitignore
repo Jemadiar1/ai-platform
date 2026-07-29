@@ -39,3 +39,8 @@ __pycache__/
 
 # Worktrees
 .worktrees/
+
+# Docker generated runtime files
+infra/docker/nginx/nginx.conf
+infra/docker/nginx/ssl/
+infra/docker/backend/
