@@ -739,24 +739,27 @@ class MemoryManager:
         Obtener perfil de usuario cross-session desde la tabla user_profiles.
         Este perfil persiste entre sesiones y contiene preferencias, datos personales, etc.
         """
-        with make_session() as db:
-            result = db.execute(
-                text("""
-                    SELECT content
-                    FROM user_profiles
-                    WHERE tenant_id = :tenant_id
-                      AND user_id = :user_id
-                    ORDER BY updated_at DESC
-                    LIMIT 1
-                """),
-                {
-                    "tenant_id": tenant_id,
-                    "user_id": user_id,
-                },
-            ).first()
+        try:
+            with make_session() as db:
+                result = db.execute(
+                    text("""
+                        SELECT content
+                        FROM user_profiles
+                        WHERE tenant_id = :tenant_id
+                          AND user_id = :user_id
+                        ORDER BY updated_at DESC
+                        LIMIT 1
+                    """),
+                    {
+                        "tenant_id": tenant_id,
+                        "user_id": user_id,
+                    },
+                ).first()
 
-        if result:
-            return result.content
+            if result and hasattr(result, "content"):
+                return result.content or ""
+        except Exception as e:
+            logger.warning(f"Error cargando user_profile: {e}")
         return ""
 
     async def _get_bounded_memory(self, session_id: str) -> str:

@@ -117,6 +117,38 @@ class Odin:
             )
             prompt = scanner.sanitize(prompt)
 
+        # Paso 1.5: Fast-path pre-routing para saludos y consultas conversacionales (0.001s latency)
+        clean_p = prompt.strip().lower().rstrip("!?.")
+        conversational_keywords = [
+            "hola", "buenos dias", "buenos días", "buenas tardes", "buenas noches",
+            "hey", "saludos", "quien eres", "quién eres", "que haces", "qué haces",
+            "que puedes hacer", "qué puedes hacer", "capacidades", "servicios",
+            "información", "informacion", "neuralcrew", "ayuda", "help", "inicio",
+            "start", "gracias", "contacto", "que ofrecen", "qué ofrecen"
+        ]
+        if any(k in clean_p for k in conversational_keywords):
+            session = await self.session_manager.get_or_create(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                session_id=session_id,
+            )
+            real_session_id = session["id"]
+            logger.info(f"Odin fast-path match: consulta conversacional -> ai-connect")
+            return {
+                "module": "ai-connect",
+                "action": "send_message",
+                "confidence": 1.0,
+                "reasoning": "Fast-path rule match: consulta conversacional",
+                "needs_decomposition": False,
+                "prompt": prompt,
+                "message_text": prompt,
+                "params": {"message_text": prompt},
+                "session_id": real_session_id,
+                "session_context": {},
+                "memory_context": "",
+                "kb_context": [],
+            }
+
         # Paso 2: Gestionar sesión
         session = await self.session_manager.get_or_create(
             tenant_id=tenant_id,
@@ -170,32 +202,6 @@ class Odin:
         except Exception as e:
             logger.warning(f"Plugin on_decide hook failed: {e}")
 
-        # Quick pre-routing check para saludos y consultas conversacionales simples (0.001s)
-        clean_p = prompt.strip().lower().rstrip("!?.")
-        conversational_keywords = [
-            "hola", "buenos dias", "buenos días", "buenas tardes", "buenas noches",
-            "hey", "saludos", "quien eres", "quién eres", "que haces", "qué haces",
-            "que puedes hacer", "qué puedes hacer", "capacidades", "servicios",
-            "información", "informacion", "neuralcrew", "ayuda", "help", "inicio",
-            "start", "gracias", "contacto", "que ofrecen", "qué ofrecen"
-        ]
-        if any(k in clean_p for k in conversational_keywords):
-            logger.info(f"Odin quick match: saludo conversacional -> ai-connect")
-            return {
-                "module": "ai-connect",
-                "action": "send_message",
-                "confidence": 1.0,
-                "reasoning": "Quick rule match: saludo conversacional",
-                "needs_decomposition": False,
-                "prompt": prompt,
-                "message_text": prompt,
-                "params": {"message_text": prompt},
-                "session_id": session_id,
-                "session_context": session_context,
-                "memory_context": memory_context,
-                "kb_context": kb_context,
-            }
-
         # Paso 6: Consultar LLM para routing
         try:
             routing = await self.llm_client.route_task(
@@ -239,7 +245,7 @@ class Odin:
         if routing.get("needs_decomposition"):
             substeps_start = self.trajectory_manager.get_active_trajectory(session_id)
             subtasks = await self.llm_client.decompose_task(
-                prompt=prompt,
+                complex_prompt=prompt,
                 tenant_id=tenant_id,
             )
             self.trajectory_manager.add_step(
