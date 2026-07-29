@@ -339,3 +339,115 @@ class VisionOCRService:
             db.commit()
 
             return str(result.id)
+
+    async def chart_analyze(self, tenant_id: str, image_bytes: bytes) -> dict[str, Any]:
+        """Análisis de gráficos/charts usando LLM vision (mimo-v2.5).
+
+        Reemplaza la detección heurística de gráficos con comprensión visual real.
+
+        Args:
+            tenant_id: Tenant propietario
+            image_bytes: Bytes de la imagen con el gráfico
+
+        Returns:
+            Dict con datos extraídos del gráfico (ejes, datos, tendencias)
+        """
+        try:
+            from ai_platform.orchestrator.llm_client import LLMClient
+
+            llm = LLMClient()
+            try:
+                prompt = (
+                    "Analiza este gráfico detalladamente. Extrae: "
+                    "1) Tipo de gráfico (barras, líneas, torta, dispersión, etc.) "
+                    "2) Eje X y qué representa "
+                    "3) Eje Y y qué representa "
+                    "4) Cada dato/valor visible "
+                    "5) Tendencias principales "
+                    "6) KPIs o métricas clave "
+                    "Responde en español, de forma estructurada."
+                )
+                result = await llm.vision_chat(prompt, image_bytes, tenant_id=tenant_id)
+                text = result.get("text", "") if isinstance(result, dict) else str(result)
+                model = result.get("model", "mimo-v2.5") if isinstance(result, dict) else "mimo-v2.5"
+
+                # Log usage
+                with make_session() as db:
+                    usage_event = UsageEvent(
+                        tenant_id=tenant_id,
+                        module="vision_ocr",
+                        event_type="chart_vision",
+                        tokens_used=0,
+                        cost_usd=0.0,
+                        extra_data={"model": model, "text_len": len(text) if text else 0},
+                    )
+                    db.add(usage_event)
+                    db.commit()
+
+                return {
+                    "success": bool(text and text.strip()),
+                    "analysis": text or "",
+                    "model": model,
+                }
+            finally:
+                try:
+                    await llm.close()
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error(f"chart_analyze vision error: {e}")
+            return {"success": False, "analysis": "", "error": str(e)}
+
+    async def document_describe(self, tenant_id: str, image_bytes: bytes) -> dict[str, Any]:
+        """Descripción de un documento/imagen usando LLM vision.
+
+        Útil para PDFs escaneados donde el OCR no puede extraer texto.
+
+        Args:
+            tenant_id: Tenant propietario
+            image_bytes: Bytes de la imagen
+
+        Returns:
+            Dict con la descripción/transcripción del documento
+        """
+        try:
+            from ai_platform.orchestrator.llm_client import LLMClient
+
+            llm = LLMClient()
+            try:
+                prompt = (
+                    "Transcribe todo el texto visible en este documento. "
+                    "Mantén el formato original. "
+                    "Si hay tablas, transcríbelas como texto tabular. "
+                    "Si hay imágenes o gráficos, descríbelos brevemente. "
+                    "Responde en español."
+                )
+                result = await llm.vision_chat(prompt, image_bytes, tenant_id=tenant_id)
+                text = result.get("text", "") if isinstance(result, dict) else str(result)
+                model = result.get("model", "mimo-v2.5") if isinstance(result, dict) else "mimo-v2.5"
+
+                with make_session() as db:
+                    usage_event = UsageEvent(
+                        tenant_id=tenant_id,
+                        module="vision_ocr",
+                        event_type="document_vision",
+                        tokens_used=0,
+                        cost_usd=0.0,
+                        extra_data={"model": model, "text_len": len(text) if text else 0},
+                    )
+                    db.add(usage_event)
+                    db.commit()
+
+                return {
+                    "success": bool(text and text.strip()),
+                    "text": text or "",
+                    "model": model,
+                }
+            finally:
+                try:
+                    await llm.close()
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error(f"document_describe vision error: {e}")
+            return {"success": False, "text": "", "error": str(e)}

@@ -68,9 +68,13 @@ class Handler:
             "render_report": self._render_report,
             "ocr_extract": self._ocr_extract,
             "chart_detect": self._chart_detect,
+            "chart_analyze": self._chart_analyze,
+            "image_describe": self._image_describe,
+            "document_understand": self._document_understand,
             "document_ingest": self._document_ingest,
             "document_chunk": self._document_chunk,
             "document_fts_search": self._document_fts_search,
+            "list_supported_file_formats": self._list_supported_file_formats,
             "default": self._default,
         }
 
@@ -80,12 +84,21 @@ class Handler:
                 "action": action,
                 "status": "failed",
                 "error": f"Acción '{action}' no encontrada en ai-analytics",
-                "note": "Acciones disponibles: web_research, web_fetch, web_browser, generate_report, render_report, ocr_extract, chart_detect, document_ingest, document_chunk, document_fts_search, default",
+                "note": "Acciones disponibles: web_research, web_fetch, web_browser, generate_report, render_report, ocr_extract, chart_detect, document_ingest, document_chunk, document_fts_search, list_supported_file_formats, default",
                 "timestamp": datetime.utcnow().isoformat(),
             }
 
         try:
-            result = handler(params, metadata, tenant_id)
+            # Async actions need an event loop
+            async_actions = {"chart_analyze", "image_describe", "document_understand"}
+            if action in async_actions:
+                loop = asyncio.new_event_loop()
+                try:
+                    result = loop.run_until_complete(handler(params, metadata, tenant_id))
+                finally:
+                    loop.close()
+            else:
+                result = handler(params, metadata, tenant_id)
             result["action"] = action
             result["timestamp"] = datetime.utcnow().isoformat()
             return result
@@ -494,6 +507,130 @@ class Handler:
                 "error": str(e),
             }
 
+    async def _chart_analyze(self, params: dict, metadata: dict, tenant_id: str) -> dict:
+        """Análisis profundo de gráficos/charts usando LLM vision."""
+        from ai_platform.services.vision_ocr import VisionOCRService
+
+        image_data = params.get("image_data", b"")
+        if not image_data:
+            b64_data = params.get("image_base64", "")
+            if b64_data:
+                import base64
+
+                try:
+                    image_data = base64.b64decode(b64_data)
+                except Exception:
+                    image_data = b""
+
+        if not image_data or (isinstance(image_data, str) and len(image_data) < 10):
+            return {
+                "status": "failed",
+                "response": "Se necesitan datos de imagen para analizar el gráfico",
+                "error": "image_data no proporcionado",
+            }
+
+        service = VisionOCRService()
+        try:
+            result = await service.chart_analyze(
+                tenant_id, image_data if isinstance(image_data, bytes) else image_data.encode("utf-8")
+            )
+            return {
+                "status": "success",
+                "response": result.get("analysis", "No se pudo analizar el gráfico"),
+                "model": result.get("model", "unknown"),
+            }
+        except Exception as e:
+            return {"status": "failed", "response": f"Error analizando gráfico: {e}", "error": str(e)}
+
+    async def _image_describe(self, params: dict, metadata: dict, tenant_id: str) -> dict:
+        """Describe una imagen usando LLM visión (mimo-v2.5)."""
+        from ai_platform.services.vision_ocr import VisionOCRService
+
+        image_data = params.get("image_data", b"")
+        if not image_data:
+            b64_data = params.get("image_base64", "")
+            if b64_data:
+                import base64
+
+                try:
+                    image_data = base64.b64decode(b64_data)
+                except Exception:
+                    image_data = b""
+
+        if not image_data or (isinstance(image_data, str) and len(image_data) < 10):
+            return {
+                "status": "failed",
+                "response": "Se necesitan datos de imagen para describir",
+                "error": "image_data no proporcionado",
+            }
+
+        service = VisionOCRService()
+        prompt = params.get("prompt", "Describe esta imagen con detalle en español.")
+        try:
+            from ai_platform.orchestrator.llm_client import LLMClient
+
+            llm = LLMClient()
+            try:
+                result = await llm.vision_chat(
+                    prompt,
+                    image_data if isinstance(image_data, bytes) else image_data.encode("utf-8"),
+                    tenant_id=tenant_id,
+                )
+                text = result.get("text", "") if isinstance(result, dict) else str(result)
+                return {
+                    "status": "success",
+                    "response": text,
+                    "model": result.get("model", "mimo-v2.5") if isinstance(result, dict) else "mimo-v2.5",
+                }
+            finally:
+                try:
+                    await llm.close()
+                except Exception:
+                    pass
+        except Exception as e:
+            return {"status": "failed", "response": f"Error describiendo imagen: {e}", "error": str(e)}
+
+    async def _document_understand(self, params: dict, metadata: dict, tenant_id: str) -> dict:
+        """Comprensión de documento/imagen usando LLM visión."""
+        from ai_platform.services.vision_ocr import VisionOCRService
+
+        image_data = params.get("image_data", b"")
+        if not image_data:
+            b64_data = params.get("image_base64", "")
+            if b64_data:
+                import base64
+
+                try:
+                    image_data = base64.b64decode(b64_data)
+                except Exception:
+                    image_data = b""
+
+        if not image_data or (isinstance(image_data, str) and len(image_data) < 10):
+            return {
+                "status": "failed",
+                "response": "Se necesitan datos de imagen para entender el documento",
+                "error": "image_data no proporcionado",
+            }
+
+        service = VisionOCRService()
+        try:
+            result = await service.document_describe(
+                tenant_id, image_data if isinstance(image_data, bytes) else image_data.encode("utf-8")
+            )
+            if result.get("success"):
+                return {
+                    "status": "success",
+                    "response": result.get("text", ""),
+                    "model": result.get("model", "mimo-v2.5"),
+                }
+            return {
+                "status": "failed",
+                "response": "No se pudo entender el documento",
+                "error": result.get("error", "error desconocido"),
+            }
+        except Exception as e:
+            return {"status": "failed", "response": f"Error entendiendo documento: {e}", "error": str(e)}
+
     # =========================================================================
     # Documentos
     # =========================================================================
@@ -657,6 +794,26 @@ class Handler:
                 "response": f"Error en búsqueda: {e}",
                 "error": str(e),
             }
+
+    # =========================================================================
+    # Listado de formatos soportados
+    # =========================================================================
+
+    def _list_supported_file_formats(self, params: dict, metadata: dict, tenant_id: str) -> dict:
+        """Retornar lista de formatos de archivo que el sistema puede leer y procesar."""
+        return {
+            "status": "success",
+            "response": (
+                "Puedo leer y procesar los siguientes formatos:\n"
+                "• Documentos: PDF, DOCX, TXT, RTF\n"
+                "• Hojas de cálculo: XLSX, CSV, TSV\n"
+                "• Presentaciones: PPTX\n"
+                "• Imágenes: PNG, JPEG, JPG, BMP, GIF, TIFF\n"
+                "• Datos: JSON, XML\n"
+                "\n"
+                "Además, puedo transcribir notas de voz (OGG, MP3, WAV) y extraer texto de imágenes escaneadas con OCR."
+            ),
+        }
 
     # =========================================================================
     # Fallback

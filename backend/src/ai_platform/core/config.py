@@ -136,6 +136,24 @@ class Settings(BaseSettings):
         description="Solapamiento de chars entre chunks adyacentes",
     )
 
+    # === Vision / Multimodal ===
+    VISION_MODEL: str = Field(
+        default="mimo-v2.5",
+        description="Modelo principal para comprensión visual (mimo-v2.5, qwen3.6, gemma4)",
+    )
+    VISION_MODEL_SECONDARY: str = Field(
+        default="qwen3.6",
+        description="Modelo secundario de visión como fallback",
+    )
+    IMAGE_MAX_SIZE_MB: int = Field(
+        default=5,
+        description="Tamaño máximo de imagen adjunta en MB",
+    )
+    MAX_ATTACHMENTS_PER_MESSAGE: int = Field(
+        default=5,
+        description="Máximo de archivos adjuntos por mensaje",
+    )
+
     # === Vision OCR ===
     OCR_MIN_CONFIDENCE: float = Field(
         default=0.65,
