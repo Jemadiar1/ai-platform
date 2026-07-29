@@ -443,8 +443,18 @@ class MemoryManager:
             assistant_result: Resultado del asistente
         """
         # Sanitize both messages
+        def _sanitize_for_json(obj: Any) -> Any:
+            if isinstance(obj, bytes):
+                return f"<bytes len={len(obj)}>"
+            elif isinstance(obj, dict):
+                return {k: _sanitize_for_json(v) for k, v in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return [_sanitize_for_json(x) for x in obj]
+            return obj
+
         user_message = prompt_sanitizer.sanitize(user_message)
-        result_content = json.dumps(assistant_result) if isinstance(assistant_result, dict) else str(assistant_result)
+        safe_result = _sanitize_for_json(assistant_result)
+        result_content = json.dumps(safe_result) if isinstance(safe_result, dict) else str(safe_result)
         result_content = prompt_sanitizer.sanitize(result_content)
 
         # Add both user and assistant messages to session history

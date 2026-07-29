@@ -392,6 +392,7 @@ class Odin:
 
         # Obtener plan del tenant desde la BD
         from uuid import UUID
+        from sqlalchemy import select
         from ai_platform.database import session_factory
         from ai_platform.models.db import Tenant
 
