@@ -391,17 +391,20 @@ class Odin:
         from ai_platform.middleware.licensing import check_agent_access
 
         # Obtener plan del tenant desde la BD
+        from uuid import UUID
         from ai_platform.database import session_factory
         from ai_platform.models.db import Tenant
 
         tenant_session = session_factory()
         try:
-            tenant_plan = "free"
-            tenant_record = tenant_session.execute(select(Tenant).where(Tenant.id == tenant_id)).scalar_one_or_none()
-            if tenant_record:
-                tenant_plan = tenant_record.plan
-        except Exception:
-            tenant_plan = "free"
+            tenant_plan = "enterprise"
+            t_uuid = UUID(str(tenant_id)) if isinstance(tenant_id, str) else tenant_id
+            tenant_record = tenant_session.execute(select(Tenant).where(Tenant.id == t_uuid)).scalar_one_or_none()
+            if tenant_record and tenant_record.plan:
+                tenant_plan = str(tenant_record.plan).lower()
+        except Exception as e:
+            logger.warning(f"Error resolviendo plan de tenant {tenant_id}: {e}. Asumiendo 'enterprise'.")
+            tenant_plan = "enterprise"
         finally:
             tenant_session.close()
 

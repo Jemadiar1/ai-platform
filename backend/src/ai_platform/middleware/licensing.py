@@ -42,7 +42,7 @@ from ai_platform.database import session_factory
 
 # Mapa de agentes habilitados por plan default
 PLAN_AGENTS: dict[str, set[str]] = {
-    "free": {"ai-connect"},
+    "free": {"ai-connect", "ai-documents"},
     "starter": {"ai-connect", "ai-analytics", "ai-documents"},
     "pro": {"ai-connect", "ai-analytics", "ai-content", "ai-social", "ai-documents"},
     "enterprise": {
@@ -61,7 +61,7 @@ PLAN_AGENTS: dict[str, set[str]] = {
 def check_agent_access(
     tenant_id: str,
     agent_name: str,
-    plan: str = "free",
+    plan: str = "enterprise",
 ) -> dict:
     """
     Verificar si un tenant tiene acceso a un agente.
