@@ -587,22 +587,29 @@ async def _process_channel_message(
         )
 
     # Paso 4: Ejecutar el módulo seleccionado
-    try:
-        # Iniciar typing indicator si es Telegram
-        try:
-            if channel == "telegram":
-                from ai_platform.channels import TelegramChannel
-                tg_typing = TelegramChannel()
-                await tg_typing.send_chat_action(chat_id, "typing")
-        except Exception:
-            pass
+    typing_stop = asyncio.Event()
+    typing_task = None
+    if channel == "telegram":
+        async def _keep_typing():
+            from ai_platform.channels import TelegramChannel
+            tg = TelegramChannel()
+            while not typing_stop.is_set():
+                try:
+                    await tg.send_chat_action(chat_id, "typing")
+                except Exception:
+                    pass
+                try:
+                    await asyncio.wait_for(typing_stop.wait(), timeout=4.0)
+                except asyncio.TimeoutError:
+                    pass
+        typing_task = asyncio.create_task(_keep_typing())
 
+    try:
         module_result = await odin_inst.execute(
             decision=decision,
             tenant_id=tenant_id,
             task_id=f"tg-{chat_id}-{reply_to_message_id}",
         )
-
     except Exception as e:
         logger.error(f"Error ejecutando módulo {module_name}: {e}", exc_info=True)
         await _send_channel_error(channel, chat_id, "Error procesando tu solicitud")
@@ -611,6 +618,10 @@ async def _process_channel_message(
             "message": f"Error ejecutando módulo {module_name}: {e!s}",
             "module": module_name,
         }
+    finally:
+        typing_stop.set()
+        if typing_task:
+            typing_task.cancel()
 
     # Actualizar module_name si Odin redirigió (ej: uncategorized → ai-connect)
     updated_module = decision["module"]

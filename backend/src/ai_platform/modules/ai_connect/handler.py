@@ -117,6 +117,18 @@ class Handler:
 
         logger.info(f"Generando respuesta IA para: {message_text[:200]}")
 
+        clean_text = message_text.strip().lower().rstrip("!?.")
+        greetings_fast = {
+            "hola", "buenos dias", "buenos días", "buenas tardes", "buenas noches",
+            "hey", "saludos", "inicio", "start"
+        }
+        if clean_text in greetings_fast:
+            return {
+                "status": "handled",
+                "response": "¡Hola! Bienvenido a **NeuralCrew Labs**. 👋\n\n¿En qué puedo ayudarte hoy? Puedo asistirte con creación de contenido, diseño web, campañas publicitarias o generación de leads.",
+                "model": "fast-rule",
+            }
+
         try:
             from ai_platform.orchestrator.llm_client import LLMClient
 
