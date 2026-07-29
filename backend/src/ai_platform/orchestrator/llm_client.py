@@ -79,25 +79,35 @@ class LLMClient:
 
         model = self.settings.PRIMARY_MODEL or ROUTING_MODELS["primary"]
         try:
-            response = await self.client.post(
-                self._chat_path,
-                json={
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": prompt},
-                    ],
-                    "max_tokens": 3000,
-                    "temperature": 0.3,
+            async with httpx.AsyncClient(
+                base_url=self.base_url,
+                headers={
+                    "Authorization": f"Bearer {self.settings.NAN_API_KEY}",
+                    "Content-Type": "application/json",
                 },
-            )
-            if response.status_code == 200:
-                data = response.json()
-                choices = data.get("choices", [])
-                if choices:
-                    return choices[0].get("message", {}).get("content", "") or ""
+                timeout=60.0,
+            ) as client:
+                response = await client.post(
+                    self._chat_path,
+                    json={
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": prompt},
+                        ],
+                        "max_tokens": 3000,
+                        "temperature": 0.3,
+                    },
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    choices = data.get("choices", [])
+                    if choices:
+                        return choices[0].get("message", {}).get("content", "") or ""
+                else:
+                    logger.warning(f"generate_text status {response.status_code}: {response.text}")
         except Exception as e:
-            logger.error(f"Error generando texto con LLMClient: {e}")
+            logger.error(f"Error generando texto con LLMClient: {e}", exc_info=True)
         return ""
 
     # =========================================================================
