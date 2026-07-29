@@ -66,8 +66,6 @@ class LLMClient:
             headers={
                 "Authorization": f"Bearer {self.settings.NAN_API_KEY}",
                 "Content-Type": "application/json",
-                "HTTP-Referer": "https://github.com/Jemadiar1/ai-platform",
-                "X-Title": "AI Platform - NeuralCrew Labs",
             },
             timeout=LLM_TIMEOUT,
         )

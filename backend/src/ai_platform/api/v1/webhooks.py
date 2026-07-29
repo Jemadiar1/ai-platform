@@ -121,6 +121,12 @@ async def telegram_webhook(request: Request):
 
     logger.info(f"Mensaje entrante Telegram: user={user_id}, text={message_text[:100]}, files={len(attachments)}")
 
+    # Activar indicador de escritura inmediatamente para UX fluida
+    try:
+        await channel.send_chat_action(chat_id, "typing")
+    except Exception:
+        pass
+
     # Responder inmediatamente a Telegram para evitar timeout (25s)
     # El procesamiento real se ejecuta en background
     asyncio.create_task(
@@ -585,55 +591,20 @@ async def _process_channel_message(
         # Reacción 🧐 para indicar que se está procesando
         reaction_ok = await _send_reaction(channel, chat_id, reply_to_message_id, "\U0001fae0")
 
-        # Typing indicator (envía una indicación al cliente, es solo signal)
+        # Iniciar typing indicator continuo si es Telegram
         try:
             if channel == "telegram":
                 from ai_platform.channels import TelegramChannel
                 tg_typing = TelegramChannel()
-                await tg_typing.send_chat_action(chat_id)
-                await asyncio.sleep(0.3)
+                await tg_typing.send_chat_action(chat_id, "typing")
         except Exception:
             pass
-
-        # Enviar mensaje de progreso inicial y animarlo
-        progress_msg_id = None
-        type_task = None
-        stop_progress = asyncio.Event()
-        progress_stages = [
-            "\U0001f50d <b>Analizando solicitud...</b>",
-            "\u231b <b>Procesando...</b>",
-            "\U0001f4a1 <b>Generando respuesta...</b>",
-            "\U0001f4c4 <b>Finalizando...</b>",
-        ]
-
-        if reply_to_message_id:
-            # Primero enviamos el primer mensaje de progreso
-            progress_resp = await _send_to_channel(
-                channel, chat_id, progress_stages[0], reply_to_message_id=reply_to_message_id
-            )
-            if progress_resp and progress_resp.get("result"):
-                progress_msg_id = progress_resp["result"].get("message_id")
-
-        if progress_msg_id:
-            type_task = asyncio.create_task(
-                _progress_pulsing(
-                    channel, chat_id, progress_msg_id, stop_progress, progress_stages
-                )
-            )
 
         module_result = await odin_inst.execute(
             decision=decision,
             tenant_id=tenant_id,
             task_id=f"tg-{chat_id}-{reply_to_message_id}",
         )
-
-        stop_progress.set()
-        if type_task:
-            type_task.cancel()
-            try:
-                await type_task
-            except asyncio.CancelledError:
-                pass
 
         # Reacción ✅ al terminar
         if reaction_ok:
@@ -644,15 +615,11 @@ async def _process_channel_message(
 
     except Exception as e:
         logger.error(f"Error ejecutando módulo {module_name}: {e}", exc_info=True)
-        # Reacción ❌ de error
         if reaction_ok:
             try:
                 await _send_reaction(channel, chat_id, reply_to_message_id, "\u274c")
             except Exception:
                 pass
-        stop_progress.set()
-        if type_task:
-            type_task.cancel()
         await _send_channel_error(channel, chat_id, "Error procesando tu solicitud")
         return {
             "status": "error",
@@ -671,38 +638,9 @@ async def _process_channel_message(
     response_text = _extract_response_text(module_result)
     if not response_text or not response_text.strip():
         response_text = "¡Hola! Soy el asistente IA de NeuralCrew Labs. ¿En qué puedo ayudarte hoy?"
-    has_response = True
 
-    if has_response:
-        # Reemplazar el mensaje de progreso por la respuesta real
-        if progress_msg_id:
-            try:
-                import html
-                response_html = html.escape(response_text)
-                # Replace * with ** for markdown-bold
-                response_html = response_html.replace("\\n", " ")
-
-                from ai_platform.channels import TelegramChannel
-                tg_resp = TelegramChannel()
-                edit_res = await tg_resp.edit_message_text(chat_id, progress_msg_id, response_text, parse_mode="HTML")
-                if not isinstance(edit_res, dict) or not edit_res.get("ok"):
-                    logger.warning(f"Edit progress msg returned {edit_res}, fallback sending new message")
-                    await _send_to_channel(channel, chat_id, response_text, reply_to_message_id=reply_to_message_id)
-            except Exception as e:
-                logger.warning(f"Error editing progress msg: {e}, sending as new message")
-                await _send_to_channel(channel, chat_id, response_text, reply_to_message_id=reply_to_message_id)
-        else:
-            # Enviar como mensaje nuevo
-            await _send_to_channel(channel, chat_id, response_text, reply_to_message_id=reply_to_message_id)
-    else:
-        # Sin texto de respuesta → eliminar el mensaje de progreso
-        if progress_msg_id:
-            try:
-                from ai_platform.channels import TelegramChannel
-                tg_del = TelegramChannel()
-                await tg_del.delete_message(chat_id, progress_msg_id)
-            except Exception:
-                pass
+    # Enviar la respuesta única directamente al canal
+    await _send_to_channel(channel, chat_id, response_text, reply_to_message_id=reply_to_message_id)
 
     return {
         "status": "success",

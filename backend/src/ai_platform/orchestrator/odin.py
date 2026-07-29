@@ -170,6 +170,30 @@ class Odin:
         except Exception as e:
             logger.warning(f"Plugin on_decide hook failed: {e}")
 
+        # Quick pre-routing check para saludos y consultas conversacionales simples (0.001s)
+        clean_p = prompt.strip().lower().rstrip("!?.")
+        simple_greetings = {
+            "hola", "buenos dias", "buenos días", "buenas tardes", "buenas noches",
+            "hey", "saludos", "quien eres", "quién eres", "que haces", "qué haces",
+            "ayuda", "help", "inicio", "start", "gracias"
+        }
+        if clean_p in simple_greetings:
+            logger.info(f"Odin quick match: saludo conversacional -> ai-connect")
+            return {
+                "module": "ai-connect",
+                "action": "send_message",
+                "confidence": 1.0,
+                "reasoning": "Quick rule match: saludo conversacional",
+                "needs_decomposition": False,
+                "prompt": prompt,
+                "message_text": prompt,
+                "params": {"message_text": prompt},
+                "session_id": session_id,
+                "session_context": session_context,
+                "memory_context": memory_context,
+                "kb_context": kb_context,
+            }
+
         # Paso 6: Consultar LLM para routing
         try:
             routing = await self.llm_client.route_task(
