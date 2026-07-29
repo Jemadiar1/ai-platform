@@ -167,11 +167,12 @@ class Odin:
                 fmt = "pdf"
 
             # Recompilar historial reciente de la sesión para no perder el contexto previo (guión, tono, marca)
-            history = await self.session_manager.get_history(real_session_id)
-            history_lines = [f"{msg.get('role', 'user').upper()}: {msg.get('content', '')}" for msg in history if msg.get("content")]
+            session_ctx = await self.session_manager.get_context(real_session_id)
+            recent = session_ctx.get("recent_messages", [])
+            history_lines = [f"{msg.get('role', 'user').upper()}: {msg.get('content', '')}" for msg in recent if msg.get("content")]
             full_context = "\n\n".join(history_lines) if history_lines else prompt
 
-            logger.info(f"Odin fast-path match: solicitud de documento ({fmt}) -> ai-documents con historial de {len(history)} msgs")
+            logger.info(f"Odin fast-path match: solicitud de documento ({fmt}) -> ai-documents con historial de {len(recent)} msgs")
             return {
                 "module": "ai-documents",
                 "action": "generate_document",
