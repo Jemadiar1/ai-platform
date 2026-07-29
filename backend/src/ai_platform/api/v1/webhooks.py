@@ -722,62 +722,43 @@ async def _send_to_channel(channel: str, chat_id: str | None, text: str, reply_t
 
 
 def _extract_response_text(module_result: Any) -> str:
-    """Extraer texto legible del resultado del módulo."""
-    # Keys que son metadatos, no respuestas al usuario
-    _METADATA_KEYS = {
-        "module", "status", "action", "error", "timestamp", "channel",
-        "session_id", "confidence", "reasoning", "params", "needs_decomposition",
-        "subtasks", "session_context", "memory_context", "kb_context",
-        "note", "data",
-    }
-    # Strings que típicamente son valores de metadata no válidos como respuesta
-    _STATUS_STRINGS = {"success", "ok", "pending", "completed", "failed", "error", "ignored", "rejected", "handled"}
-
+    """Extraer texto legible del resultado del módulo (desenvolviendo dicts anidados)."""
+    if not module_result:
+        return ""
+    if isinstance(module_result, str):
+        s = module_result.strip()
+        if s and s.lower() not in {"success", "ok", "completed", "handled"}:
+            return s[:4096]
+        return ""
     if isinstance(module_result, dict):
-        # Prioridad 1: response > message > text > reply (campos directos)
-        for key in ("response", "message", "text", "reply"):
+        # 1. Buscar campos prioritarios directos
+        for key in ("response", "content", "text", "message", "reply"):
             if key in module_result:
                 val = module_result[key]
                 if isinstance(val, str) and val.strip():
                     return val[:4096]
                 elif isinstance(val, dict):
-                    # response puede ser un dict {response: "..."}
-                    for inner_key in ("response", "message", "text", "reply", "content"):
-                        if inner_key in val:
-                            inner_val = val[inner_key]
-                            if isinstance(inner_val, str) and inner_val.strip():
-                                return inner_val[:4096]
-        # Prioridad 2: result como string (ej: ai-documents._default)
-        if "result" in module_result:
-            val = module_result["result"]
-            if isinstance(val, str) and val.strip() and val not in _STATUS_STRINGS:
-                return val[:4096]
-            elif isinstance(val, dict):
-                # result como dict: buscar response/message/text dentro
-                for key in ("response", "message", "text", "reply", "content"):
-                    if key in val:
-                        inner_val = val[key]
-                        if isinstance(inner_val, str) and inner_val.strip():
-                            return inner_val[:4096]
-        # Prioridad 3: cualquier campo con string que no sea metadata
+                    res = _extract_response_text(val)
+                    if res:
+                        return res
+        # 2. Buscar dentro de 'result' o 'data'
+        for key in ("result", "data"):
+            if key in module_result:
+                val = module_result[key]
+                res = _extract_response_text(val)
+                if res:
+                    return res
+        # 3. Buscar cualquier otro valor dict/str que no sea metadata
+        _METADATA_KEYS = {"module", "status", "action", "error", "timestamp", "channel", "session_id", "confidence", "reasoning", "params"}
         for key, val in module_result.items():
             if key in _METADATA_KEYS:
                 continue
-            if isinstance(val, str) and val.strip() and val not in _STATUS_STRINGS:
+            if isinstance(val, str) and val.strip() and val.lower() not in {"success", "ok", "completed", "handled"}:
                 return val[:4096]
-            # Si es dict, buscar contenido dentro
             elif isinstance(val, dict):
-                for inner_key in ("response", "message", "text", "reply", "content", "result"):
-                    if inner_key in val:
-                        inner_val = val[inner_key]
-                        if isinstance(inner_val, str) and inner_val.strip() and inner_val not in _STATUS_STRINGS:
-                            return inner_val[:4096]
-        # Prioridad 4: error como respuesta final
-        if "error" in module_result:
-            return str(module_result["error"])
-    elif isinstance(module_result, str) and module_result.strip():
-        if module_result not in _STATUS_STRINGS:
-            return module_result[:4096]
+                res = _extract_response_text(val)
+                if res:
+                    return res
     return ""
 
 

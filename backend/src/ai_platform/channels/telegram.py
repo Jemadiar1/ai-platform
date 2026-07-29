@@ -932,11 +932,13 @@ class TelegramChannel(BaseChannel):
         if not self.token or not chat_id:
             return {"status": "error", "message": "token/chat_id ausentes"}
 
+        chat_id = self._clean_chat_id(chat_id)
+        reaction_list = [{"type": "emoji", "emoji": emoji}] if emoji else []
         url = f"{self.base_url}/setMessageReaction"
         payload = {
             "chat_id": chat_id,
             "message_id": message_id,
-            "reaction": emoji,
+            "reaction": reaction_list,
         }
 
         try:

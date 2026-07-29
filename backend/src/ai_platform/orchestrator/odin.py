@@ -172,12 +172,14 @@ class Odin:
 
         # Quick pre-routing check para saludos y consultas conversacionales simples (0.001s)
         clean_p = prompt.strip().lower().rstrip("!?.")
-        simple_greetings = {
+        conversational_keywords = [
             "hola", "buenos dias", "buenos días", "buenas tardes", "buenas noches",
             "hey", "saludos", "quien eres", "quién eres", "que haces", "qué haces",
-            "ayuda", "help", "inicio", "start", "gracias"
-        }
-        if clean_p in simple_greetings:
+            "que puedes hacer", "qué puedes hacer", "capacidades", "servicios",
+            "información", "informacion", "neuralcrew", "ayuda", "help", "inicio",
+            "start", "gracias", "contacto", "que ofrecen", "qué ofrecen"
+        ]
+        if any(k in clean_p for k in conversational_keywords):
             logger.info(f"Odin quick match: saludo conversacional -> ai-connect")
             return {
                 "module": "ai-connect",
