@@ -633,7 +633,7 @@ async def _process_channel_message(
             }
             chan_cls = channel_map.get(channel, TelegramChannel)
             chan_inst = chan_cls()
-            await _send_document_response(module_result, chan_inst, chat_id, reply_to_message_id=reply_to_message_id)
+            await _send_document_result(chan_inst, module_result, chat_id, reply_to_message_id=reply_to_message_id)
         except Exception as e:
             logger.error(f"Error enviando documento al canal: {e}", exc_info=True)
             response_text = _extract_response_text(module_result) or "Documento generado exitosamente."
@@ -753,11 +753,15 @@ def _extract_response_text(module_result: Any) -> str:
                 if res:
                     return res
         # 3. Buscar cualquier otro valor dict/str que no sea metadata
-        _METADATA_KEYS = {"module", "status", "action", "error", "timestamp", "channel", "session_id", "confidence", "reasoning", "params"}
+        _METADATA_KEYS = {
+            "module", "status", "action", "error", "timestamp", "channel", "session_id",
+            "confidence", "reasoning", "params", "format", "filename", "file_size_bytes",
+            "rendering_ms", "type", "formats", "docx", "pdf", "xlsx", "pptx", "png"
+        }
         for key, val in module_result.items():
             if key in _METADATA_KEYS:
                 continue
-            if isinstance(val, str) and val.strip() and val.lower() not in {"success", "ok", "completed", "handled"}:
+            if isinstance(val, str) and val.strip() and val.lower() not in {"success", "ok", "completed", "handled", "docx", "pdf", "xlsx", "pptx", "png"}:
                 return val[:4096]
             elif isinstance(val, dict):
                 res = _extract_response_text(val)
@@ -1252,15 +1256,26 @@ async def _send_document_result(
     """Enviar los archivos generados por ai-documents al usuario."""
     from ai_platform.channels.telegram import _FORMAT_MIME_MAP
 
-    status = module_result.get("status", "unknown")
+    status = module_result.get("status", "success")
+    doc_keys = ["docx", "pdf", "xlsx", "pptx", "png"]
 
-    if status == "success":
-        formats = module_result.get("formats", {})
-        formats_to_send = list(formats.keys()) if formats else ["pdf"]
+    formats = module_result.get("formats", {})
+    if not formats:
+        formats = {k: module_result[k] for k in doc_keys if isinstance(module_result.get(k), bytes)}
+        if not formats and module_result.get("format") and isinstance(module_result.get(module_result["format"]), bytes):
+            fmt_name = module_result["format"]
+            formats[fmt_name] = module_result[fmt_name]
 
+    formats_to_send = list(formats.keys())
+    if not formats_to_send:
+        formats_to_send = [k for k in doc_keys if isinstance(module_result.get(k), bytes)]
+        if not formats_to_send and module_result.get("format"):
+            formats_to_send = [module_result["format"]]
+
+    if status == "success" or formats_to_send:
         # Intentar enviar el formato principal primero
-        main_format = formats_to_send[0] if formats_to_send else "pdf"
-        main_format_bytes = module_result.get(main_format)
+        main_format = formats_to_send[0] if formats_to_send else "docx"
+        main_format_bytes = module_result.get(main_format) or formats.get(main_format)
 
         if main_format_bytes:
             mime_type = _FORMAT_MIME_MAP.get(main_format, "application/octet-stream")
