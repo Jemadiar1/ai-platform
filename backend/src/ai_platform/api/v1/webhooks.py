@@ -1302,12 +1302,20 @@ async def _send_document_result(
                         reply_to_message_id=reply_to_message_id,
                     )
                 else:
+                    doc_caption = (
+                        f"\u2705 <b>Documento Profesional Generado ({fmt.upper()})</b>\n\n"
+                        f"\U0001f4c4 <i>El archivo ha sido formateado con plantilla corporativa.</i>\n\n"
+                        f"\U0001f4a1 <b>¿Deseas personalizar algún aspecto?</b>\n"
+                        f"• Cambiar el tono (corporativo, persuasivo, conversacional)\n"
+                        f"• Agregar datos específicos de tu marca o negocio\n"
+                        f"• Incluir tablas de presupuesto o métricas adicionales"
+                    )
                     resp = await channel.send_document_bytes(
                         chat_id=chat_id,
                         file_bytes=file_bytes,
                         filename=f"documento.{fmt}",
                         mime_type=mime_type,
-                        caption=f"\u2705 <b>Documento generado ({fmt.upper()})</b>",
+                        caption=doc_caption,
                         reply_to_message_id=reply_to_message_id,
                     )
 
