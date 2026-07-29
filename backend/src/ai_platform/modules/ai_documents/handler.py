@@ -123,21 +123,27 @@ class Handler:
 
         params = await self._ensure_rich_content(params, tenant_id)
         g = Generators(tenant_id)
-        return g.render_docx(tenant_id, params)
+        res = g.render_docx(tenant_id, params)
+        res["content"] = params.get("content", "")
+        return res
 
     async def _render_xlsx(self, params: dict, metadata: dict, tenant_id: str) -> dict:
         from ai_platform.modules.ai_documents.generators import Generators
 
         params = await self._ensure_rich_content(params, tenant_id)
         g = Generators(tenant_id)
-        return g.render_xlsx(tenant_id, params)
+        res = g.render_xlsx(tenant_id, params)
+        res["content"] = params.get("content", "")
+        return res
 
     async def _render_pptx(self, params: dict, metadata: dict, tenant_id: str) -> dict:
         from ai_platform.modules.ai_documents.generators import Generators
 
         params = await self._ensure_rich_content(params, tenant_id)
         g = Generators(tenant_id)
-        return g.render_pptx(tenant_id, params)
+        res = g.render_pptx(tenant_id, params)
+        res["content"] = params.get("content", "")
+        return res
 
     async def _render_png(self, params: dict, metadata: dict, tenant_id: str) -> dict:
         from ai_platform.modules.ai_documents.generators import Generators
@@ -150,14 +156,18 @@ class Handler:
 
         params = await self._ensure_rich_content(params, tenant_id)
         g = Generators(tenant_id)
-        return g.render_pdf(tenant_id, params)
+        res = g.render_pdf(tenant_id, params)
+        res["content"] = params.get("content", "")
+        return res
 
     async def _render_all(self, params: dict, metadata: dict, tenant_id: str) -> dict:
         from ai_platform.modules.ai_documents.generators import Generators
 
         params = await self._ensure_rich_content(params, tenant_id)
         g = Generators(tenant_id)
-        return g.render_all(tenant_id, params)
+        res = g.render_all(tenant_id, params)
+        res["content"] = params.get("content", "")
+        return res
 
     async def _render_document(self, params: dict, metadata: dict, tenant_id: str) -> dict:
         params = await self._ensure_rich_content(params, tenant_id)

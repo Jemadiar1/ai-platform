@@ -104,6 +104,12 @@ async def _handle_telegram_message_bg(update_data: dict, channel: Any) -> None:
         message_text = extracted.get("message_text", "")
         attachments = extracted.get("attachments", [])
 
+        if chat_id:
+            try:
+                await channel.send_chat_action(chat_id, "typing")
+            except Exception:
+                pass
+
         reply_to_message_id = message.get("reply_to_message", {}).get("message_id") or message.get("message_id")
 
         if attachments:
@@ -626,15 +632,23 @@ async def _process_channel_message(
             module_name = updated_module
 
         if module_name == "ai-documents" or "formats" in module_result or any(k in module_result for k in ("docx", "pdf", "xlsx", "pptx", "png")):
+            from ai_platform.channels import TelegramChannel, WhatsAppChannel, DiscordChannel
+            channel_map = {
+                "telegram": TelegramChannel,
+                "whatsapp": WhatsAppChannel,
+                "discord": DiscordChannel,
+            }
+            chan_cls = channel_map.get(channel, TelegramChannel)
+            chan_inst = chan_cls()
+
+            # 1. Enviar el contenido del guión/documento en texto plano al chat
+            text_content = module_result.get("content") or module_result.get("text") or module_result.get("markdown") or ""
+            if isinstance(text_content, str) and len(text_content.strip()) > 50 and "USER:" not in text_content:
+                header = "📝 <b>Contenido Generado:</b>\n\n"
+                await _send_to_channel(channel, chat_id, header + text_content[:3500], reply_to_message_id=reply_to_message_id)
+
+            # 2. Enviar el archivo binario (.docx, .pdf, etc.)
             try:
-                from ai_platform.channels import TelegramChannel, WhatsAppChannel, DiscordChannel
-                channel_map = {
-                    "telegram": TelegramChannel,
-                    "whatsapp": WhatsAppChannel,
-                    "discord": DiscordChannel,
-                }
-                chan_cls = channel_map.get(channel, TelegramChannel)
-                chan_inst = chan_cls()
                 await _send_document_result(chan_inst, module_result, chat_id, reply_to_message_id=reply_to_message_id)
             except Exception as e:
                 logger.error(f"Error enviando documento al canal: {e}", exc_info=True)
