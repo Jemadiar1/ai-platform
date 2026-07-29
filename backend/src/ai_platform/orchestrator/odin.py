@@ -149,6 +149,39 @@ class Odin:
                 "kb_context": [],
             }
 
+        # Fast-path rule para creación de documentos, guiones y archivos (.docx, .xlsx, .pptx, .pdf)
+        doc_keywords = ["word", "docx", "documento", "guion", "guión", "excel", "xlsx", "pptx", "powerpoint", "pdf", "script", "plantilla"]
+        if any(k in clean_p for k in doc_keywords):
+            session = await self.session_manager.get_or_create(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                session_id=session_id,
+            )
+            real_session_id = session["id"]
+            fmt = "docx"
+            if any(x in clean_p for x in ["excel", "xlsx", "hoja de calculo", "tabla"]):
+                fmt = "xlsx"
+            elif any(x in clean_p for x in ["pptx", "powerpoint", "presentacion", "diapositiva"]):
+                fmt = "pptx"
+            elif "pdf" in clean_p:
+                fmt = "pdf"
+
+            logger.info(f"Odin fast-path match: solicitud de documento ({fmt}) -> ai-documents")
+            return {
+                "module": "ai-documents",
+                "action": "generate_document",
+                "confidence": 1.0,
+                "reasoning": f"Fast-path rule match: creación de documento {fmt}",
+                "needs_decomposition": False,
+                "prompt": prompt,
+                "message_text": prompt,
+                "params": {"format": fmt, "subject": prompt, "content": prompt, "title": prompt},
+                "session_id": real_session_id,
+                "session_context": {},
+                "memory_context": "",
+                "kb_context": [],
+            }
+
         # Paso 2: Gestionar sesión
         session = await self.session_manager.get_or_create(
             tenant_id=tenant_id,

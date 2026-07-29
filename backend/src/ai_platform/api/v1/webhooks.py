@@ -540,53 +540,6 @@ async def _process_channel_message(
     except Exception:
         pass
 
-    try:
-        decision = await odin_inst.decide(
-            prompt=message_text,
-            tenant_id=tenant_id,
-            user_id=user_id_platform,
-            session_id=resolved_session_id,
-        )
-    except Exception as e:
-        logger.error(f"Error en Odin.decide(): {e}")
-        await _send_channel_error(channel, chat_id, "Error interno")
-        return {"status": "error", "message": str(e)}
-
-    session_id = decision.get("session_id")
-    module_name = decision["module"]
-    action = decision["action"]
-    params = decision.get("params", {})
-
-    # DEBUG LOG
-    logger.info("=" * 60)
-    logger.info(f"ODIN DECISION: module={module_name!r}, action={action!r}, confidence={decision.get('confidence')}")
-    logger.info(f"ODIN DECISION: message={message_text[:150]!r}")
-    logger.info(f"ODIN DECISION: channel={channel}, chat_id={chat_id}")
-    logger.info("=" * 60)
-
-    # Paso 3: Actualizar session_id en channel_mappings para reutilización futura
-    if session_id and mapping:
-        with make_session() as db:
-            db.execute(
-                text("""
-                    UPDATE channel_mappings
-                    SET last_session_id = :session_id
-                    WHERE id = :mapping_id
-                """),
-                {"session_id": session_id, "mapping_id": mapping.id},
-            )
-            db.commit()
-
-    # Paso 4: Actualizar chat_id en el mapeo de canal
-    if session_id:
-        channel_update_channel(
-            session_id=session_id,
-            channel=channel,
-            chat_id=chat_id,
-            channel_user_id=user_id,
-        )
-
-    # Paso 4: Ejecutar el módulo seleccionado
     typing_stop = asyncio.Event()
     typing_task = None
     if channel == "telegram":
@@ -599,24 +552,65 @@ async def _process_channel_message(
                 except Exception:
                     pass
                 try:
-                    await asyncio.wait_for(typing_stop.wait(), timeout=4.0)
+                    await asyncio.wait_for(typing_stop.wait(), timeout=3.5)
                 except asyncio.TimeoutError:
                     pass
         typing_task = asyncio.create_task(_keep_typing())
 
     try:
+        decision = await odin_inst.decide(
+            prompt=message_text,
+            tenant_id=tenant_id,
+            user_id=user_id_platform,
+            session_id=resolved_session_id,
+        )
+
+        session_id = decision.get("session_id")
+        module_name = decision["module"]
+        action = decision["action"]
+        params = decision.get("params", {})
+
+        # DEBUG LOG
+        logger.info("=" * 60)
+        logger.info(f"ODIN DECISION: module={module_name!r}, action={action!r}, confidence={decision.get('confidence')}")
+        logger.info(f"ODIN DECISION: message={message_text[:150]!r}")
+        logger.info(f"ODIN DECISION: channel={channel}, chat_id={chat_id}")
+        logger.info("=" * 60)
+
+        # Paso 3: Actualizar session_id en channel_mappings para reutilización futura
+        if session_id and mapping:
+            with make_session() as db:
+                db.execute(
+                    text("""
+                        UPDATE channel_mappings
+                        SET last_session_id = :session_id
+                        WHERE id = :mapping_id
+                    """),
+                    {"session_id": session_id, "mapping_id": mapping.id},
+                )
+                db.commit()
+
+        # Paso 4: Actualizar chat_id en el mapeo de canal
+        if session_id:
+            channel_update_channel(
+                session_id=session_id,
+                channel=channel,
+                chat_id=chat_id,
+                channel_user_id=user_id,
+            )
+
         module_result = await odin_inst.execute(
             decision=decision,
             tenant_id=tenant_id,
             task_id=f"tg-{chat_id}-{reply_to_message_id}",
         )
     except Exception as e:
-        logger.error(f"Error ejecutando módulo {module_name}: {e}", exc_info=True)
+        logger.error(f"Error procesando mensaje: {e}", exc_info=True)
         await _send_channel_error(channel, chat_id, "Error procesando tu solicitud")
         return {
             "status": "error",
-            "message": f"Error ejecutando módulo {module_name}: {e!s}",
-            "module": module_name,
+            "message": f"Error procesando mensaje: {e!s}",
+            "module": module_name if 'module_name' in locals() else "unknown",
         }
     finally:
         typing_stop.set()
