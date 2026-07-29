@@ -703,6 +703,13 @@ class TelegramChannel(BaseChannel):
     # Existing methods (keep unchanged)
     # =========================================================================
 
+    def _clean_chat_id(self, chat_id: Any) -> Any:
+        if isinstance(chat_id, (int, str)):
+            s = str(chat_id).strip()
+            if s.isdigit() or (s.startswith("-") and s[1:].isdigit()):
+                return int(s)
+        return chat_id
+
     async def send_message(
         self,
         chat_id: str,

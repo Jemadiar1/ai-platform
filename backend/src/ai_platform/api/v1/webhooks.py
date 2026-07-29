@@ -81,7 +81,7 @@ async def telegram_webhook(request: Request):
     message_text = extracted.get("message_text", "")
     attachments = extracted.get("attachments", [])
 
-    reply_to_message_id = message.get("reply_to_message", {}).get("message_id")
+    reply_to_message_id = message.get("reply_to_message", {}).get("message_id") or message.get("message_id")
 
     # If there's a photo, download it and get a description via vision model
     if attachments:
@@ -668,9 +668,10 @@ async def _process_channel_message(
 
     logger.info(f"MODULE_RESULT keys: {list(module_result.keys())}")
 
-    # Paso 5: Enviar respuesta de vuelta al canal
     response_text = _extract_response_text(module_result)
-    has_response = bool(response_text)
+    if not response_text or not response_text.strip():
+        response_text = "¡Hola! Soy el asistente IA de NeuralCrew Labs. ¿En qué puedo ayudarte hoy?"
+    has_response = True
 
     if has_response:
         # Reemplazar el mensaje de progreso por la respuesta real

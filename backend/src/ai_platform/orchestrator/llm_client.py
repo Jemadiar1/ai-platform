@@ -1,5 +1,5 @@
 """
-Cliente OpenRouter para decisiones de orquestación.
+Cliente NAN para decisiones de orquestación.
 
 Odin usa un LLM para decidir:
 - Qué módulo ejecutar dado un input del usuario
@@ -7,9 +7,7 @@ Odin usa un LLM para decidir:
 - Cuánto contexto proporcionar a cada módulo
 
 Modelos usados:
-- claude-3.5-sonnet: Para decisiones complejas (routing, planning)
-- gpt-4o-mini: Para tareas simples (categorización simple)
-- openrouter/auto: Permite a OpenRouter elegir el mejor modelo
+- qwen3.6: Modelo principal para routing, planning y descomposición
 
 Patrones de optimización:
 - Prompt caching para Claude (reduce costos 75%)
@@ -17,6 +15,8 @@ Patrones de optimización:
 - Timeout de 30 segundos por decisión
 """
 
+import asyncio
+import base64
 import json
 import logging
 from typing import Any
@@ -28,63 +28,55 @@ from ai_platform.orchestrator.pricing import calculate_cost
 from ai_platform.orchestrator.rate_limiter import get_rate_limit_tracker
 
 logger = logging.getLogger(__name__)
-
 settings = get_settings()
 
 # Modelos disponibles para decisiones de orquestación
 ROUTING_MODELS = {
-    "primary": "qwen3.6",  # Modelo por defecto NAN
-    "fallback": "qwen3.6",  # Fallback NAN
-    "fast": "qwen3.6",  # Modelo rápido NAN
+    "primary": "qwen3.6",
+    "fallback": "qwen3.6",
+    "fast": "qwen3.6",
 }
 
-# Timeout de 30 segundos por llamada LLM
-LLM_TIMEOUT = 30.0
+# Timeout de 12 segundos por llamada LLM para fallbacks interactivos veloces
+LLM_TIMEOUT = 12.0
 
 # Headers para prompt caching de Claude
-# El header "anthropic-beta: prompt-caching-2024-07-31" habilita el caching
-# Solo funciona con modelos Anthropic Claude
 ANTHROPIC_CACHE_HEADER = {"anthropic-beta": "prompt-caching-2024-07-31"}
 
 # Marcador de punto de cacheo para Claude
-# Se coloca en el sistema para indicar dónde termina el contenido cacheable
 CACHE_BREAKPOINT = "\n--- INICIO DEL PROMPT DEL SISTEMA (este contenido se cachea) ---"
 
 
 class LLMClient:
     """
-    Cliente OpenRouter para decisiones de orquestación.
+    Cliente NAN para decisiones de orquestación.
 
     Encapsula las llamadas a LLM que Odin usa para:
     - Clasificar y enrutar tareas
     - Descomponer tareas complejas en subtasks
     - Extraer parámetros de los inputs de usuario
     - Tomar decisiones de coordinación entre módulos
-
-    Uso:
-        client = LLMClient()
-        routing = await client.route_task({"prompt": "Generar un post para Instagram"})
-        # routing = {"module": "ai-social", "params": {...}}
     """
 
     def __init__(self):
         self.settings = get_settings()
+        self.base_url = self.settings.NAN_API_URL
         self.client = httpx.AsyncClient(
-            base_url=self.settings.NAN_API_URL
-            if self.settings.LLM_PROVIDER.lower() == "nan"
-            else self.settings.OPENROUTER_API_URL,
+            base_url=self.base_url,
             headers={
-                "Authorization": f"Bearer {self.settings.NAN_API_KEY if self.settings.LLM_PROVIDER.lower() == 'nan' else self.settings.OPENROUTER_API_KEY}",
+                "Authorization": f"Bearer {self.settings.NAN_API_KEY}",
                 "Content-Type": "application/json",
                 "HTTP-Referer": "https://github.com/Jemadiar1/ai-platform",
                 "X-Title": "AI Platform - NeuralCrew Labs",
             },
             timeout=LLM_TIMEOUT,
         )
-        # NAN API uses /chat/completions (no /v1 prefix in path)
-        self._chat_path = "/chat/completions" if self.settings.LLM_PROVIDER.lower() == "nan" else "/v1/chat/completions"
-        # Tracker de límites de tasa para rate limiting
+        self._chat_path = "/chat/completions"
         self._rate_tracker = get_rate_limit_tracker()
+
+    # =========================================================================
+    # Routing principal
+    # =========================================================================
 
     async def route_task(
         self,
@@ -93,52 +85,22 @@ class LLMClient:
         history: list[dict] | None = None,
         memory_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """
-        Decidir qué módulo debe ejecutar una tarea.
+        """Decidir qué módulo debe ejecutar una tarea."""
+        if not self.settings.NAN_API_KEY:
+            logger.warning("NAN_API_KEY no configurada. Usando fallback de routing inmediato.")
+            return await self._route_with_fallback(prompt, tenant_id, history)
 
-        Este es el método central de Odin. Usa Claude-3.5-Sonnet
-        para analizar el prompt del usuario y decidir:
-        1. Qué módulo es el más apropiado
-        2. Qué acción dentro de ese módulo
-        3. Qué parámetros relevantes extraer
-
-        Parámetros:
-            prompt: Input del usuario (ej: "Crear una landing page")
-            tenant_id: ID del tenant actual
-            history: Historial de conversación relevante
-            memory_context: Contexto de memoria con cross_session_user
-
-        Retorna:
-            Dict con:
-                - module: Nombre del módulo (ai-connect, ai-content, etc.)
-                - action: Acción específica dentro del módulo
-                - params: Parámetros extraídos del prompt
-                - confidence: Score de confianza (0.0 - 1.0)
-                - reasoning: Explicación de por qué eligió ese módulo
-                - cost_usd: Costo real de la llamada (si se pudo rastrear)
-
-        Raises:
-            RuntimeError: Si no hay API key configurada
-        """
-        if self.settings.LLM_PROVIDER.lower() == "openrouter" and not self.settings.OPENROUTER_API_KEY:
-            raise RuntimeError("OPENROUTER_API_KEY no está configurada. Verifica tu .env.")
-
-        # Construir el prompt de sistema para la decisión
         user_profile = ""
         if memory_context:
             user_profile = memory_context.get("cross_session_user", "")
 
         system_prompt = self._build_routing_system_prompt(tenant_id, history, user_profile=user_profile)
-
-        # Construir el mensaje del usuario
         user_message = self._build_routing_user_prompt(prompt, history)
 
-        # Modelo a usar (primario para Claude con caching)
         model = self.settings.PRIMARY_MODEL or ROUTING_MODELS["primary"]
         is_claude = "claude" in model
 
-        # Aplicar rate limiting antes de hacer la solicitud
-        self._rate_tracker.wait_if_needed("openrouter")
+        self._rate_tracker.wait_if_needed("nan")
 
         try:
             response = await self.client.post(
@@ -151,58 +113,40 @@ class LLMClient:
                         use_cache=is_claude and self.settings.USE_PROMPT_CACHE,
                     ),
                     "max_tokens": 1024,
-                    "temperature": 0.1,  # Baja temperatura para decisiones consistentes
+                    "temperature": 0.1,
                     "response_format": {"type": "json_object"},
-                    # Headers para prompt caching (solo Claude)
                     **({"extra_headers": ANTHROPIC_CACHE_HEADER} if is_claude else {}),
                 },
             )
 
-            # Registrar la solicitud en el tracker de rate limits
-            self._rate_tracker.record_request("openrouter", success=response.status_code == 200)
+            self._rate_tracker.record_request("nan", success=response.status_code == 200)
 
             if response.status_code == 200:
                 data = response.json()
                 result = self._parse_routing_response(data)
-                # Registrar costo real basado en tokens
                 self._record_llm_cost(model, data, result)
                 return result
 
-            logger.warning(
-                f"Routing LLM failed with status {response.status_code}. Attempting fallback to gpt-4o-mini."
-            )
+            logger.warning(f"Routing LLM failed with status {response.status_code}. Attempting fallback.")
             return await self._route_with_fallback(prompt, tenant_id, history)
 
         except httpx.TimeoutException:
             logger.warning("Routing LLM timed out. Using fallback.")
-            self._rate_tracker.record_request("openrouter", success=False)
+            self._rate_tracker.record_request("nan", success=False)
             return await self._route_with_fallback(prompt, tenant_id, history)
         except Exception as e:
-            logger.error(f"Routing LLM error: {e}")
-            self._rate_tracker.record_request("openrouter", success=False)
+            logger.error(f"Routing LLM error: {e}", exc_info=True)
+            self._rate_tracker.record_request("nan", success=False)
             return await self._route_with_fallback(prompt, tenant_id, history)
 
+    # =========================================================================
+    # Descomposición de tareas
+    # =========================================================================
+
     async def decompose_task(self, complex_prompt: str, tenant_id: str) -> list[dict[str, Any]]:
-        """
-        Descomponer una tarea compleja en subtasks.
-
-        Ejemplo:
-            Input: "Crea una landing page y publícala en Instagram"
-            Output: [
-                {"module": "ai-web", "action": "generate", "params": {...}},
-                {"module": "ai-content", "action": "create_copy", "params": {...}},
-                {"module": "ai-social", "action": "publish", "params": {...}}
-            ]
-
-        Parámetros:
-            complex_prompt: Input complejo del usuario
-            tenant_id: ID del tenant actual
-
-        Retorna:
-            Lista de subtasks (cada una con module, action, params)
-        """
-        if self.settings.LLM_PROVIDER.lower() == "openrouter" and not self.settings.OPENROUTER_API_KEY:
-            raise RuntimeError("OPENROUTER_API_KEY no está configurada. Verifica tu .env.")
+        """Descomponer una tarea compleja en subtasks."""
+        if not self.settings.NAN_API_KEY:
+            raise ValueError("NAN_API_KEY no está configurada.")
 
         system_prompt = self._build_decompose_system_prompt(tenant_id)
         user_message = f"Decompone la siguiente tarea en pasos específicos:\n\n{complex_prompt}"
@@ -210,12 +154,11 @@ class LLMClient:
         model = self.settings.PRIMARY_MODEL or ROUTING_MODELS["primary"]
         is_claude = "claude" in model
 
-        # Aplicar rate limiting antes de hacer la solicitud
-        self._rate_tracker.wait_if_needed("openrouter")
+        self._rate_tracker.wait_if_needed("nan")
 
         try:
             response = await self.client.post(
-                "/v1/chat/completions",
+                self._chat_path,
                 json={
                     "model": model,
                     "messages": self._build_cached_messages(
@@ -226,13 +169,11 @@ class LLMClient:
                     "max_tokens": 2048,
                     "temperature": 0.1,
                     "response_format": {"type": "json_object"},
-                    # Headers para prompt caching (solo Claude)
                     **({"extra_headers": ANTHROPIC_CACHE_HEADER} if is_claude else {}),
                 },
             )
 
-            # Registrar la solicitud en el tracker de rate limits
-            self._rate_tracker.record_request("openrouter", success=response.status_code == 200)
+            self._rate_tracker.record_request("nan", success=response.status_code == 200)
 
             if response.status_code == 200:
                 data = response.json()
@@ -244,30 +185,18 @@ class LLMClient:
             return await self._decompose_with_fallback(complex_prompt, tenant_id)
 
         except Exception as e:
-            logger.error(f"Decomposition LLM error: {e}")
-            self._rate_tracker.record_request("openrouter", success=False)
+            logger.error(f"Decomposition LLM error: {e}", exc_info=True)
+            self._rate_tracker.record_request("nan", success=False)
             return await self._decompose_with_fallback(complex_prompt, tenant_id)
 
+    # =========================================================================
+    # Extracción de parámetros
+    # =========================================================================
+
     async def extract_params(self, prompt: str, module: str, action: str) -> dict[str, Any]:
-        """
-        Extraer parámetros relevantes de un input para un módulo específico.
-
-        Ejemplo:
-            Input: "Enviar un mensaje de WhatsApp a +51999999999: Hola, esto es una oferta"
-            Module: ai-connect
-            Action: send_whatsapp
-            Output: {"phone": "+51999999999", "message": "Hola..."}
-
-        Parámetros:
-            prompt: Input del usuario
-            module: Módulo objetivo
-            action: Acción específica
-
-        Retorna:
-            Dict con parámetros extraídos
-        """
-        if self.settings.LLM_PROVIDER.lower() == "openrouter" and not self.settings.OPENROUTER_API_KEY:
-            raise RuntimeError("OPENROUTER_API_KEY no está configurada. Verifica tu .env.")
+        """Extraer parámetros relevantes de un input para un módulo específico."""
+        if not self.settings.NAN_API_KEY:
+            raise ValueError("NAN_API_KEY no está configurada.")
 
         system_prompt = self._build_extract_system_prompt(module, action)
         user_message = f"Extrae los parámetros relevantes de este input:\n\n{prompt}"
@@ -275,12 +204,11 @@ class LLMClient:
         model = self.settings.FAST_MODEL or ROUTING_MODELS["fast"]
         is_claude = "claude" in model
 
-        # Aplicar rate limiting antes de hacer la solicitud
-        self._rate_tracker.wait_if_needed("openrouter")
+        self._rate_tracker.wait_if_needed("nan")
 
         try:
             response = await self.client.post(
-                "/v1/chat/completions",
+                self._chat_path,
                 json={
                     "model": model,
                     "messages": self._build_cached_messages(
@@ -291,483 +219,463 @@ class LLMClient:
                     "max_tokens": 512,
                     "temperature": 0.0,
                     "response_format": {"type": "json_object"},
-                    # Headers para prompt caching (solo Claude)
                     **({"extra_headers": ANTHROPIC_CACHE_HEADER} if is_claude else {}),
                 },
             )
 
-            # Registrar la solicitud en el tracker de rate limits
-            self._rate_tracker.record_request("openrouter", success=response.status_code == 200)
+            self._rate_tracker.record_request("nan", success=response.status_code == 200)
 
             if response.status_code == 200:
                 data = response.json()
-                result = self._parse_extract_response(data)
-                self._record_llm_cost(model, data, result)
+                result = self._parse_extract_params_response(data)
                 return result
 
-            return {}
+            logger.warning("Param extraction LLM failed. Using fallback.")
+            return await self._extract_params_fallback(module, action, prompt)
 
         except Exception as e:
-            logger.error(f"Extract params LLM error: {e}")
-            self._rate_tracker.record_request("openrouter", success=False)
-            return {}
+            logger.error(f"Param extraction LLM error: {e}", exc_info=True)
+            self._rate_tracker.record_request("nan", success=False)
+            return await self._extract_params_fallback(module, action, prompt)
 
-    async def close(self) -> None:
-        """Cerrar el cliente HTTP."""
-        await self.client.aclose()
+    # =========================================================================
+    # Chat simple (respuesta conversacional)
+    # =========================================================================
 
-    # -------------------------------------------------------------------------
-    # Private methods
-    # -------------------------------------------------------------------------
-
-    def _build_cached_messages(
-        self,
-        system_prompt: str,
-        user_message: str,
-        use_cache: bool = True,
-    ) -> list[dict[str, Any]]:
-        """
-        Construir mensajes con soporte de prompt caching para Claude.
-
-        Para modelos Anthropic Claude, se añaden los marcadores
-        `cache_control: {"type": "ephemeral"}` que indican a Claude
-        qué contenido debe cachearse.
-
-        El sistema se cachea porque es contenido estático que se repite
-        en cada llamada (misma configuración, mismas reglas).
-
-        Los mensajes del usuario NO se cachean porque cambian en cada llamada.
-
-        Patrones de Hermes:
-        - System prompt: siempre cacheable (contenido estático)
-        - User messages: no cacheables (contenido dinámico)
-        - Cache breakpoint: marca el límite de lo que se cachea
-
-        Parámetros:
-            system_prompt: Prompt de sistema (se cachea si es Claude)
-            user_message: Prompt del usuario (no se cachea)
-            use_cache: Si está habilitado el caching
-
-        Retorna:
-            Lista de mensajes con cache_control donde aplica
-        """
-        if use_cache:
-            return [
-                {
-                    "role": "system",
-                    "content": system_prompt + CACHE_BREAKPOINT,
-                    "cache_control": {"type": "ephemeral"},
-                },
-                {"role": "user", "content": user_message},
-            ]
-        else:
-            return [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ]
-
-    def _record_llm_cost(
-        self,
-        model_name: str,
-        response_data: dict,
-        result: dict[str, Any],
-    ) -> None:
-        """
-        Registrar el costo real de una llamada LLM basado en tokens usados.
-
-        Lee los usage stats de la respuesta de OpenRouter y calcula
-        el costo real usando los precios de pricing.py.
-
-        Parámetros:
-            model_name: Nombre del modelo usado
-            response_data: Respuesta completa de OpenRouter
-            result: Resultado parseado (para logging)
-        """
-        try:
-            usage = response_data.get("usage", {})
-            input_tokens = usage.get("prompt_tokens", 0)
-            output_tokens = usage.get("completion_tokens", 0)
-
-            if input_tokens > 0 and output_tokens > 0:
-                cost = calculate_cost(input_tokens, output_tokens, model_name)
-                logger.info(
-                    f"LLM usage: model={model_name}, "
-                    f"input_tokens={input_tokens}, output_tokens={output_tokens}, "
-                    f"cost_usd={cost:.6f}"
-                )
-            else:
-                logger.debug(f"LLM call completed but no usage data: model={model_name}")
-        except Exception as e:
-            logger.warning(f"Failed to record LLM cost: {e}")
-
-    def _build_routing_system_prompt(
-        self,
-        tenant_id: str,
-        history: list[dict] | None = None,
-        user_profile: str = "",
-    ) -> str:
-        """
-        Construir el prompt de sistema para la decisión de routing.
-
-        Este prompt define las reglas de decisión de Odin usando
-        los principios de SOUL.md como guía.
-
-        Este contenido se cachea en Claude (si está habilitado)
-        porque es estático y se repite en cada llamada.
-        """
-        base = (
-            "Odin es el orquestador principal de AI Platform. "
-            "Tu trabajo es decidir qué módulo especializado debe ejecutar "
-            "cada tarea del usuario.\n\n"
-            "Módulos disponibles:\n"
-            "- ai-connect: Mensajería (WhatsApp, Telegram, Slack, etc.)\n"
-            "- ai-content: Generación de contenido (textos, posts, blogs)\n"
-            "- ai-social: Gestión de redes sociales (Instagram, Facebook, LinkedIn)\n"
-            "- ai-leads: Generación y gestión de leads\n"
-            "- ai-ads: Campañas publicitarias (Meta Ads, Google Ads)\n"
-            "- ai-analytics: Análisis de datos, métricas, reportes, investigación web, OCR y renderizado\n"
-            "- ai-web: Generación de páginas web y landing pages\n\n"
-            "Capacidades internas de ai-analytics:\n"
-            "- web_research: Investigar fuentes web, fetch de URLs, navegación headless\n"
-            "- document_ingestion: Procesar documentos (PDF, DOCX, imágenes) con chunking y FTS\n"
-            "- vision_ocr: Extraer texto de imágenes/escaneos con OCR (Tesseract), detectar gráficos\n"
-            "- report_renderer: Generar reportes en PDF, DOCX, XLSX, CSV con gráficos\n\n"
-            "Principios de decisión:\n"
-            "1. Siempre selecciona UN SOLO módulo principal\n"
-            "2. Si el usuario pide múltiples módulos, selecciona el principal y\n"
-            "   marca 'needs_decomposition': true\n"
-            "3. Piensa en el INTENT del usuario, no solo las palabras clave\n"
-            "4. Si una tarea no encaja en ningún módulo, responde 'uncategorized'\n"
-            "5. Investigación web, OCR, procesamiento de documentos y reportes van a ai-analytics\n\n"
-            "Debes responder SIEMPRE en este formato JSON:\n"
-            "{\n"
-            '  "module": "ai-connect" | "ai-content" | "ai-ads" | "ai-analytics" | "ai-leads" | "ai-social" | "ai-web" | "uncategorized",\n'
-            '  "action": "string describing the specific action",\n'
-            '  "confidence": 0.0 - 1.0,\n'
-            '  "reasoning": "why this module was chosen",\n'
-            '  "needs_decomposition": false\n'
-            "}\n\n"
-        )
-
-        # Add user profile context if available
-        if user_profile:
-            base += f"\n## Perfil del Usuario\n{user_profile}\n\n"
-
-        if history:
-            context = "Contexto de conversación relevante:\n"
-            for msg in history[-5:]:  # Últimos 5 mensajes para contexto
-                context += f"- {msg}\n"
-            base += "\n" + context
-
-        return base
-
-    def _build_routing_user_prompt(self, prompt: str, history: list[dict] | None = None) -> str:
-        """
-        Construir el prompt del usuario para routing.
-        """
-        base = f"Usuario dice: {prompt}"
-
-        if history:
-            # Incluir contexto si disponible
-            recent = history[-3:] if len(history) > 3 else history
-            context = "\nHistorial reciente:\n"
-            for msg in recent:
-                context += f"- {msg}\n"
-            base += context
-
-        return base
-
-    def _parse_routing_response(self, data: dict) -> dict[str, Any]:
-        """
-        Parsear la respuesta del LLM para routing.
-        """
-        try:
-            content = data["choices"][0]["message"]["content"]
-            routing = json.loads(content)
-
-            return {
-                "module": routing.get("module", "uncategorized"),
-                "action": routing.get("action", "unknown"),
-                "params": {},
-                "confidence": min(max(routing.get("confidence", 0.5), 0.0), 1.0),
-                "reasoning": routing.get("reasoning", ""),
-                "needs_decomposition": routing.get("needs_decomposition", False),
-            }
-        except (KeyError, json.JSONDecodeError, IndexError) as e:
-            logger.error(f"Failed to parse routing response: {e}")
-            return {
-                "module": "uncategorized",
-                "action": "unknown",
-                "params": {},
-                "confidence": 0.0,
-                "reasoning": "Failed to parse LLM response",
-                "needs_decomposition": False,
-            }
-
-    def _build_decompose_system_prompt(self, tenant_id: str) -> str:
-        """
-        Construir el prompt para descomposición de tareas.
-        """
-        return (
-            "Eres Odin, el orquestador de AI Platform. "
-            "Tu trabajo es descomponer tareas complejas en pasos simples.\n\n"
-            "Cada paso debe ser un módulo específico con su acción.\n"
-            "Módulos: ai-connect, ai-content, ai-social, ai-leads, ai-ads, ai-analytics, ai-web\n\n"
-            "ai-analytics incluye: web_research, document_ingestion, vision_ocr, report_renderer\n\n"
-            "Responde SIEMPRE en este formato JSON:\n"
-            "{\n"
-            '  "steps": [\n'
-            '    {"module": "ai-connect", "action": "send_message", "params": {}, "depends_on": null},\n'
-            '    {"module": "ai-social", "action": "post", "params": {}, "depends_on": 0}\n'
-            "  ]\n"
-            "}\n\n"
-            "'depends_on' es el índice 0-based del paso que debe completarse antes.\n"
-        )
-
-    def _parse_decompose_response(self, data: dict) -> list[dict[str, Any]]:
-        """
-        Parsear la respuesta del LLM para descomposición.
-        """
-        try:
-            content = data["choices"][0]["message"]["content"]
-            response = json.loads(content)
-            return response.get("steps", [])
-        except (KeyError, json.JSONDecodeError, IndexError) as e:
-            logger.error(f"Failed to parse decomposition response: {e}")
-            return []
-
-    def _build_extract_system_prompt(self, module: str, action: str) -> str:
-        """
-        Construir el prompt para extracción de parámetros.
-        """
-        return (
-            f"Eras Odin, el orquestador de AI Platform.\n\n"
-            f"El módulo '{module}' quiere ejecutar la acción '{action}'.\n"
-            f"Extrae los parámetros relevantes del input del usuario.\n"
-            f"Responde SIEMPRE en formato JSON válido.\n"
-        )
-
-    def _parse_extract_response(self, data: dict) -> dict[str, Any]:
-        """
-        Parsear la respuesta del LLM para extracción de parámetros.
-        """
-        try:
-            content = data["choices"][0]["message"]["content"]
-            return json.loads(content)
-        except (KeyError, json.JSONDecodeError, IndexError) as e:
-            logger.error(f"Failed to parse extract response: {e}")
-            return {}
-
-    # -------------------------------------------------------------------------
-    # Fallback methods (sin LLM)
-    # -------------------------------------------------------------------------
-
-    async def _route_with_fallback(
-        self, prompt: str, tenant_id: str, history: list[dict] | None = None
-    ) -> dict[str, Any]:
-        """
-        Fallback: routing basado en reglas simples si el LLM falla.
-        """
-        return self._rule_based_routing(prompt)
-
-    def _rule_based_routing(self, prompt: str) -> dict[str, Any]:
-        """
-        Routing basado en palabras clave como fallback.
-
-        Este método no depende de LLM y siempre funciona.
-        """
-        prompt_lower = prompt.lower()
-
-        if any(word in prompt_lower for word in ["whatsapp", "messenger", "telegram", "slack", "mensaje", "chat"]):
-            return {
-                "module": "ai-connect",
-                "action": "send_message",
-                "params": {},
-                "confidence": 0.7,
-                "reasoning": "Rule-based: detected messaging keywords",
-                "needs_decomposition": False,
-            }
-        elif any(word in prompt_lower for word in ["landing", "webpage", "website", "página", "web"]):
-            return {
-                "module": "ai-web",
-                "action": "generate_page",
-                "params": {},
-                "confidence": 0.7,
-                "reasoning": "Rule-based: detected web page keywords",
-                "needs_decomposition": False,
-            }
-        elif any(word in prompt_lower for word in ["post", "instagram", "facebook", "linkedin", "social", "publicar"]):
-            return {
-                "module": "ai-social",
-                "action": "create_post",
-                "params": {},
-                "confidence": 0.7,
-                "reasoning": "Rule-based: detected social media keywords",
-                "needs_decomposition": False,
-            }
-        elif any(word in prompt_lower for word in ["ads", "advert", "campaign", "publicidad", "anuncio"]):
-            return {
-                "module": "ai-ads",
-                "action": "create_campaign",
-                "params": {},
-                "confidence": 0.7,
-                "reasoning": "Rule-based: detected ads keywords",
-                "needs_decomposition": False,
-            }
-        elif any(word in prompt_lower for word in ["lead", "prospect", "cliente potencial", "contacto"]):
-            return {
-                "module": "ai-leads",
-                "action": "generate_leads",
-                "params": {},
-                "confidence": 0.7,
-                "reasoning": "Rule-based: detected leads keywords",
-                "needs_decomposition": False,
-            }
-        elif any(word in prompt_lower for word in ["analytics", "report", "métrica", "estadística", "data"]):
-            return {
-                "module": "ai-analytics",
-                "action": "generate_report",
-                "params": {},
-                "confidence": 0.7,
-                "reasoning": "Rule-based: detected analytics keywords",
-                "needs_decomposition": False,
-            }
-        elif any(word in prompt_lower for word in ["blog", "content", "copy", "texto", "artículo", "post", "generar"]):
-            return {
-                "module": "ai-content",
-                "action": "generate_content",
-                "params": {},
-                "confidence": 0.7,
-                "reasoning": "Rule-based: detected content generation keywords",
-                "needs_decomposition": False,
-            }
-        elif any(
-            word in prompt_lower
-            for word in ["research", "investigar", "web search", "buscar web", "fetch url", "scrape"]
-        ):
-            return {
-                "module": "ai-analytics",
-                "action": "web_research",
-                "params": {},
-                "confidence": 0.7,
-                "reasoning": "Rule-based: detected web research keywords",
-                "needs_decomposition": False,
-            }
-        elif any(
-            word in prompt_lower
-            for word in ["document", "upload", "subir", "pdf", "docx", "chunk", "index", "fts", "search doc"]
-        ):
-            return {
-                "module": "ai-analytics",
-                "action": "document_ingest",
-                "params": {},
-                "confidence": 0.7,
-                "reasoning": "Rule-based: detected document ingestion keywords",
-                "needs_decomposition": False,
-            }
-        elif any(
-            word in prompt_lower for word in ["ocr", "scan", "escanear", "extract text image", "chart detect", "graph"]
-        ):
-            return {
-                "module": "ai-analytics",
-                "action": "ocr_extract",
-                "params": {},
-                "confidence": 0.7,
-                "reasoning": "Rule-based: detected OCR/visual analysis keywords",
-                "needs_decomposition": False,
-            }
-        elif any(
-            word in prompt_lower
-            for word in ["report", "render", "generate report", "export report", "pdf report", "xlsx", "spreadsheet"]
-        ):
-            return {
-                "module": "ai-analytics",
-                "action": "render_report",
-                "params": {},
-                "confidence": 0.7,
-                "reasoning": "Rule-based: detected report rendering keywords",
-                "needs_decomposition": False,
-            }
-
-        return {
-            "module": "ai-connect",
-            "action": "send_message",
-            "params": {},
-            "confidence": 0.5,
-            "reasoning": "Default routing: no specific keywords matched, using ai-connect as fallback",
-            "needs_decomposition": False,
-        }
-
-    async def _decompose_with_fallback(self, prompt: str, tenant_id: str) -> list[dict[str, Any]]:
-        """
-        Fallback: descomposición basada en reglas simples.
-        """
-        return [self._rule_based_routing(prompt)]
-
-    def chat(self, prompt: str, tenant_id: str = "", user_id: str = "") -> dict[str, Any]:
-        """
-        Enviar un mensaje al LLM y obtener una respuesta.
-
-        Este método es síncrono y se usa para generar respuestas de chat
-        cuando el módulo ai-connect recibe una acción send_message.
-        """
+    async def chat(self, prompt: str, tenant_id: str = "", user_id: str = "") -> dict[str, Any]:
+        """Enviar un mensaje al LLM y obtener una respuesta conversacional."""
         model = self.settings.PRIMARY_MODEL or "qwen3.6"
 
         try:
-            with httpx.Client(
-                base_url=self.settings.NAN_API_URL
-                if self.settings.LLM_PROVIDER.lower() == "nan"
-                else self.settings.OPENROUTER_API_URL,
-                headers={
-                    "Authorization": f"Bearer {self.settings.NAN_API_KEY if self.settings.LLM_PROVIDER.lower() == 'nan' else self.settings.OPENROUTER_API_KEY}",
-                    "Content-Type": "application/json",
+            response = await self.client.post(
+                "/chat/completions",
+                json={
+                    "model": model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": (
+                                "Eres un asistente de marketing digital profesional de NeuralCrew Labs.\n\n"
+                                "Capacidades:\n"
+                                "- Generar contenido: blogs, emails, posts para redes sociales, copy publicitario, SEO\n"
+                                "- Crear páginas web con HTML/CSS responsivo\n"
+                                "- Generar documentos: DOCX, XLSX, PPTX, PDF, PNG\n"
+                                "- Crear campañas publicitarias para Meta, Google, TikTok, LinkedIn\n"
+                                "- Generar leads calificados B2B/B2C\n"
+                                "- Analizar engagement y métricas de redes sociales\n\n"
+                                "Reglas:\n"
+                                "- Responde siempre en español\n"
+                                "- Sé profesional, útil y conciso\n"
+                                "- Si el usuario pide un documento específico (PDF, DOCX, etc.), indícale que se procesará\n"
+                                "- Si no estás seguro de qué módulo usar, sugiere el más apropiado\n"
+                                "- No inventes datos ni hagas afirmaciones sin base\n\n"
+                                f"Usuario: {prompt}"
+                            ),
+                        },
+                    ],
+                    "max_tokens": 4096,
+                    "temperature": 0.7,
                 },
-                timeout=60,
-            ) as client:
-                response = client.post(
+            )
+
+            if response is None or response.status_code != 200:
+                error_detail = response.text[:200] if response else "No response received"
+                logger.warning(f"Chat LLM failed: {error_detail}")
+                return {
+                    "content": "Lo siento, estoy teniendo problemas para generar una respuesta. Intenta de nuevo.",
+                    "model": model,
+                }
+
+            data = response.json()
+            content = ""
+            if "choices" in data and len(data["choices"]) > 0:
+                choice = data["choices"][0]
+                content = choice.get("message", {}).get("content") or ""
+
+            if content and content.strip():
+                _truncated = choice.get("finish_reason") == "length"
+                result = {"content": content.strip(), "model": model, "_truncated": _truncated}
+                if _truncated:
+                    logger.warning(f"Response truncated. Prompt: {len(prompt)} chars")
+                return result
+        except Exception as e:
+            logger.error(f"Chat LLM error: {e}", exc_info=True)
+            return {
+                "content": "Lo siento, estoy teniendo problemas para generar una respuesta. Intenta de nuevo.",
+                "model": model,
+            }
+
+    # =========================================================================
+    # Chat con visión (imágenes)
+    # =========================================================================
+
+    async def vision_chat(
+        self,
+        prompt: str,
+        png_bytes: bytes,
+        tenant_id: str = "",
+        user_id: str = "",
+    ) -> dict[str, Any]:
+        """Enviar una imagen y un prompt al LLM con visión."""
+        model = self.settings.VISION_MODEL or "gpt-4o"
+
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                b64 = base64.b64encode(png_bytes).decode("utf-8")
+                content = [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{b64}",
+                            "detail": "high",
+                        },
+                    },
+                ]
+
+                response = await self.client.post(
                     "/chat/completions",
                     json={
                         "model": model,
-                        "messages": [
-                            {
-                                "role": "user",
-                                "content": f"Eres un asistente de marketing digital de NeuralCrew Labs, una agencia 100% potenciada por IA. Responde de forma útil, concisa y profesional en español. Usuario: {prompt}",
-                            },
-                        ],
-                        "max_tokens": 4096,
-                        "temperature": 0.7,
+                        "messages": [{"role": "user", "content": content}],
+                        "max_tokens": 512,
+                        "temperature": 0.5,
                     },
                 )
 
                 if response.status_code == 200:
                     data = response.json()
+                    text = ""
                     if "choices" in data and len(data["choices"]) > 0:
                         choice = data["choices"][0]
-                        finish_reason = choice.get("finish_reason", "")
-                        content = choice.get("message", {}).get("content", "")
+                        text = choice.get("message", {}).get("content", "")
+                    return {"text": text.strip(), "model": model}
 
-                        if finish_reason == "length":
-                            logger.warning(
-                                f"Chat LLM response truncated (finish_reason=length), "
-                                f"consider increasing max_tokens. Prompt length: {len(prompt)} chars"
-                            )
-                            return {"content": content.strip(), "model": model, "_truncated": True}
+                logger.warning(f"vision_chat({model}) attempt {attempt+1}/{max_retries} failed: {response.status_code}")
 
-                        if content and content.strip():
-                            return {"content": content.strip(), "model": model}
-                    else:
-                        content = data.get("content", "")
-                        if content and content.strip():
-                            return {"content": content.strip(), "model": model}
+                if attempt == 0 and self.settings.VISION_MODEL_SECONDARY:
+                    model = self.settings.VISION_MODEL_SECONDARY
+                    self.client = httpx.AsyncClient(
+                        base_url=self.base_url,
+                        headers={
+                            "Authorization": f"Bearer {self.settings.NAN_API_KEY}",
+                            "Content-Type": "application/json",
+                            "HTTP-Referer": "https://github.com/Jemadiar1/ai-platform",
+                            "X-Title": "AI Platform - NeuralCrew Labs",
+                        },
+                        timeout=LLM_TIMEOUT,
+                    )
+                    continue
 
-                logger.warning(f"Chat LLM failed with status {response.status_code}: {response.text[:200]}")
-                return {
-                    "content": "Lo siento, estoy teniendo problemas para generar una respuesta. Intenta de nuevo.",
-                    "model": model,
-                }
-        except Exception as e:
-            logger.error(f"Chat LLM error: {e}")
+            except Exception as e:
+                logger.error(f"vision_chat attempt {attempt+1} error: {e}", exc_info=True)
+                if attempt == 0 and self.settings.VISION_MODEL_SECONDARY:
+                    model = self.settings.VISION_MODEL_SECONDARY
+                    self.client = httpx.AsyncClient(
+                        base_url=self.base_url,
+                        headers={
+                            "Authorization": f"Bearer {self.settings.NAN_API_KEY}",
+                            "Content-Type": "application/json",
+                            "HTTP-Referer": "https://github.com/Jemadiar1/ai-platform",
+                            "X-Title": "AI Platform - NeuralCrew Labs",
+                        },
+                        timeout=LLM_TIMEOUT,
+                    )
+                    continue
+
+        logger.error(f"vision_chat failed after {max_retries} attempts")
+        return {
+            "text": "Lo siento, no pude analizar la imagen. Intenta de nuevo.",
+            "model": "error",
+        }
+
+    async def close(self):
+        """Cerrar el cliente HTTP."""
+        try:
+            await self.client.aclose()
+        except Exception:
+            pass
+
+    # =========================================================================
+    # Métodos privados - Construcción de prompts
+    # =========================================================================
+
+    def _build_routing_system_prompt(
+        self, tenant_id: str, history: list[dict] | None = None, user_profile: str = ""
+    ) -> str:
+        """Construir el prompt del sistema para routing."""
+        from ai_platform.orchestrator.modules import get_route_modules_description
+
+        module_desc = get_route_modules_description()
+
+        system = f"""Eres Odin, el orquestador de NeuralCrew Labs, una agencia de marketing 100% potenciada por IA.
+Tu trabajo es decidir qué módulo debe ejecutar una tarea basada en el input del usuario.
+
+{module_desc}
+
+Reglas de decisión:
+1. Elige EXACTAMENTE UN módulo que mejor resuelva la solicitud del usuario.
+2. Si la solicitud es ambigua, elige el módulo más genérico (ai-connect).
+3. Para generación de documentos (Word, Excel, PowerPoint, PDF, imágenes), usa ai-documents.
+4. Para mensajes conversacionales o preguntas generales, usa ai-connect.
+5. Para contenido de redes sociales, usa ai-social.
+6. Para análisis, reportes, OCR, investigación web, usa ai-analytics.
+7. Para landing pages o páginas web, usa ai-web.
+8. Para generar leads, usa ai-leads.
+9. Para campañas publicitarias, usa ai-ads.
+10. Para generar texto (posts, blogs, copy), usa ai-content.
+
+Si la solicitud no encaja en ningún módulo específico, usa "uncategorized" y Odin manejará el fallback.
+
+El output debe ser JSON con estas claves:
+- module: nombre del módulo
+- action: acción específica dentro del módulo
+- params: parámetros extraídos del prompt
+- confidence: score entre 0.0 y 1.0
+- reasoning: explicación breve de la decisión
+- needs_decomposition: true si la tarea es compleja y requiere múltiples pasos
+
+"""
+
+        if user_profile:
+            system += f"\nPerfil del usuario: {user_profile}\n"
+
+        system += CACHE_BREAKPOINT
+
+        return system
+
+    def _build_routing_user_prompt(self, prompt: str, history: list[dict] | None = None) -> str:
+        """Construir el prompt del usuario para routing."""
+        user_input = f"Input del usuario: {prompt}"
+
+        if history and len(history) > 0:
+            recent = history[-3:]  # Últimos 3 mensajes como contexto
+            ctx_lines = []
+            for msg in recent:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")[:200]
+                ctx_lines.append(f"{role}: {content}")
+            if ctx_lines:
+                user_input += f"\n\nContexto reciente:\n" + "\n".join(ctx_lines)
+
+        user_input += "\n\nResponde ÚNICAMENTE con JSON válido."
+        return user_input
+
+    def _build_decompose_system_prompt(self, tenant_id: str) -> str:
+        """Construir el sistema prompt para descomposición de tareas."""
+        return f"""Eres un planificador de tareas de NeuralCrew Labs.
+
+Descomponer una tarea compleja en subtasks específicas. Cada subtask debe:
+- Tener un módulo asignado
+- Tener una acción específica
+- Tener parámetros claros
+
+Responde ÚNICAMENTE con un array JSON de objetos con las claves:
+- module: nombre del módulo
+- action: acción específica
+- params: parámetros de la subtask
+- description: descripción breve
+
+Ejemplo:
+Input: "Crea una landing page y publícala en Instagram"
+Output: [
+    {{"module": "ai-web", "action": "generate", "params": {{...}}}},
+    {{"module": "ai-social", "action": "publish", "params": {{...}}}}
+]
+"""
+
+    def _build_extract_system_prompt(self, module: str, action: str) -> str:
+        """Construir el sistema prompt para extracción de parámetros."""
+        return f"""Eres un extractor de parámetros de NeuralCrew Labs.
+
+Módulo: {module}
+Acción: {action}
+
+Extrae los parámetros relevantes del input del usuario y responda como JSON.
+No inventes valores. Usa null para parámetros no proporcionados.
+"""
+
+    # =========================================================================
+    # Construcción de mensajes con caching
+    # =========================================================================
+
+    def _build_cached_messages(
+        self,
+        system_prompt: str,
+        user_message: str,
+        use_cache: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Construir array de mensajes con soporte para prompt caching."""
+        messages = []
+
+        if use_cache and "claude" in (settings.PRIMARY_MODEL or ""):
+            # Claude prompt caching: dividir en system + user
+            messages.append({
+                "role": "system",
+                "content": f"{system_prompt}\n{CACHE_BREAKPOINT}",
+            })
+            messages.append({
+                "role": "user",
+                "content": user_message,
+            })
+        else:
+            # Modelo genérico: un solo sistema + usuario
+            messages.append({
+                "role": "system",
+                "content": system_prompt,
+            })
+            messages.append({
+                "role": "user",
+                "content": user_message,
+            })
+
+        return messages
+
+    # =========================================================================
+    # Parsing de respuestas
+    # =========================================================================
+
+    def _parse_routing_response(self, data: dict) -> dict[str, Any]:
+        """Parsear la respuesta del LLM para routing."""
+        resp_content = ""
+        try:
+            # Safe access: handle None values from LLM
+            message = data.get("choices", [{}])[0].get("message")
+            if isinstance(message, dict):
+                resp_content = message.get("content", "")
+            if resp_content is None:
+                resp_content = ""
+        except (IndexError, AttributeError, KeyError):
+            pass
+
+        if not resp_content:
+            logger.warning("Empty response content from LLM")
             return {
-                "content": "Lo siento, estoy teniendo problemas para generar una respuesta. Intenta de nuevo.",
-                "model": model,
+                "module": "ai-connect",
+                "action": "send_message",
+                "params": {},
+                "confidence": 0.5,
+                "reasoning": "Fallback por respuesta vacía del LLM",
             }
+
+        try:
+            result = json.loads(resp_content)
+        except (json.JSONDecodeError, TypeError):
+            safe_preview = resp_content if isinstance(resp_content, str) else "<None>"
+            logger.warning(f"Failed to parse routing response as JSON: {safe_preview[:200]}")
+            return {
+                "module": "ai-connect",
+                "action": "send_message",
+                "params": {},
+                "confidence": 0.5,
+                "reasoning": "Fallback por parsing fallido",
+            }
+
+
+        # Validar y completar campos
+        result.setdefault("module", "ai-connect")
+        result.setdefault("action", "send_message")
+        result.setdefault("params", {})
+        result.setdefault("confidence", 0.5)
+        result.setdefault("reasoning", "Decisión automática")
+        result.setdefault("needs_decomposition", False)
+
+        return result
+
+    def _parse_decompose_response(self, data: dict) -> list[dict[str, Any]]:
+        """Parsear la respuesta del LLM para descomposición."""
+        content = ""
+        if "choices" in data and len(data["choices"]) > 0:
+            choice = data["choices"][0]
+            content = choice.get("message", {}).get("content") or ""
+
+        try:
+            result = json.loads(content)
+            if isinstance(result, list):
+                return result
+            return []
+        except (json.JSONDecodeError, TypeError):
+            logger.warning(f"Failed to parse decompose response as JSON: {content[:200]}")
+            return []
+
+    def _parse_extract_params_response(self, data: dict) -> dict[str, Any]:
+        """Parsear la respuesta del LLM para extracción de parámetros."""
+        content = ""
+        if "choices" in data and len(data["choices"]) > 0:
+            choice = data["choices"][0]
+            content = choice.get("message", {}).get("content") or ""
+
+        try:
+            result = json.loads(content)
+            if isinstance(result, dict):
+                return result
+            return {}
+        except (json.JSONDecodeError, TypeError):
+            logger.warning(f"Failed to parse extract params response as JSON: {content[:200]}")
+            return {}
+
+    # =========================================================================
+    # Fallbacks
+    # =========================================================================
+
+    async def _route_with_fallback(self, prompt: str, tenant_id: str, history: list[dict] | None = None) -> dict[str, Any]:
+        """Fallback de routing: siempre devuelve ai-connect si el LLM falla."""
+        logger.warning("Using fallback routing: ai-connect.send_message")
+        return {
+            "module": "ai-connect",
+            "action": "send_message",
+            "params": {},
+            "confidence": 0.3,
+            "reasoning": "Fallback: LLM no disponible, usando ai-connect",
+            "needs_decomposition": False,
+        }
+
+    async def _decompose_with_fallback(
+        self, complex_prompt: str, tenant_id: str
+    ) -> list[dict[str, Any]]:
+        """Fallback de descomposición: una sola subtask con ai-connect."""
+        logger.warning("Using fallback decomposition: single subtask ai-connect")
+        return [
+            {
+                "module": "ai-connect",
+                "action": "send_message",
+                "params": {},
+                "description": "Tarea procesada con fallback",
+            }
+        ]
+
+    async def _extract_params_fallback(self, module: str, action: str, prompt: str) -> dict[str, Any]:
+        """Fallback de extracción: retorna dict vacío."""
+        logger.warning("Using fallback param extraction")
+        return {"prompt_match": prompt[:100]}
+
+    # =========================================================================
+    # Cost tracking
+    # =========================================================================
+
+    def _record_llm_cost(self, model: str, data: dict, result: dict) -> None:
+        """Registrar costo real basado en tokens usados."""
+        try:
+            usage = data.get("usage", {})
+            prompt_tokens = usage.get("prompt_tokens", 0) or 0
+            completion_tokens = usage.get("completion_tokens", 0) or 0
+
+            cost = calculate_cost(prompt_tokens, completion_tokens, model)
+            result["cost_usd"] = cost
+            logger.debug(f"LLM cost: ${cost:.4f} for model {model}, {prompt_tokens + completion_tokens} tokens")
+        except Exception as e:
+            logger.warning(f"Failed to calculate LLM cost: {e}")
+            result["cost_usd"] = 0.0
+
+
+# Instancia global (singleton)
+_llm_client: LLMClient | None = None
+
+
+def get_llm_client() -> LLMClient:
+    """Obtener el cliente de LLM (singleton)."""
+    global _llm_client
+    if _llm_client is None:
+        _llm_client = LLMClient()
+    return _llm_client
