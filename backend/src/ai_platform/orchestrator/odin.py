@@ -149,6 +149,40 @@ class Odin:
                 "kb_context": [],
             }
 
+        # Fast-path rule para reinicio de sesión / limpiar contexto
+        reset_keywords = ["/reset", "/clear", "/limpiar", "reiniciar sesion", "reiniciar sesión", "borrar contexto", "nueva sesion", "nueva sesión"]
+        if any(k in clean_p for k in reset_keywords):
+            if session_id:
+                try:
+                    await self.session_manager.end(session_id, tenant_id)
+                except Exception:
+                    pass
+            new_session = await self.session_manager.create(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                title=f"Sesión nueva de {user_id or 'usuario'}",
+            )
+            reset_msg = (
+                "🔄 <b>Sesión e historial reiniciados con éxito.</b>\n\n"
+                "Se ha eliminado el contexto acumulado de la conversación. "
+                "Puedes iniciar una nueva solicitud desde cero (ej: redactar un nuevo guion o informe)."
+            )
+            logger.info(f"Odin fast-path match: reinicio de sesión -> new_session_id={new_session.id}")
+            return {
+                "module": "ai-connect",
+                "action": "send_message",
+                "confidence": 1.0,
+                "reasoning": "Fast-path rule match: reinicio de sesión",
+                "needs_decomposition": False,
+                "prompt": prompt,
+                "message_text": reset_msg,
+                "params": {"message_text": reset_msg},
+                "session_id": new_session.id,
+                "session_context": {},
+                "memory_context": "",
+                "kb_context": [],
+            }
+
         # Fast-path rule para creación de documentos, guiones y archivos (.docx, .xlsx, .pptx, .pdf)
         doc_keywords = ["word", "docx", "documento", "guion", "guión", "excel", "xlsx", "pptx", "powerpoint", "pdf", "script", "plantilla"]
         if any(k in clean_p for k in doc_keywords):

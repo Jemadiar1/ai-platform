@@ -85,7 +85,7 @@ class LLMClient:
                     "Authorization": f"Bearer {self.settings.NAN_API_KEY}",
                     "Content-Type": "application/json",
                 },
-                timeout=60.0,
+                timeout=httpx.Timeout(120.0, connect=15.0),
             ) as client:
                 response = await client.post(
                     self._chat_path,
@@ -95,7 +95,7 @@ class LLMClient:
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": prompt},
                         ],
-                        "max_tokens": 3000,
+                        "max_tokens": 2000,
                         "temperature": 0.3,
                     },
                 )
