@@ -166,7 +166,12 @@ class Odin:
             elif "pdf" in clean_p:
                 fmt = "pdf"
 
-            logger.info(f"Odin fast-path match: solicitud de documento ({fmt}) -> ai-documents")
+            # Recompilar historial reciente de la sesión para no perder el contexto previo (guión, tono, marca)
+            history = await self.session_manager.get_history(real_session_id)
+            history_lines = [f"{msg.get('role', 'user').upper()}: {msg.get('content', '')}" for msg in history if msg.get("content")]
+            full_context = "\n\n".join(history_lines) if history_lines else prompt
+
+            logger.info(f"Odin fast-path match: solicitud de documento ({fmt}) -> ai-documents con historial de {len(history)} msgs")
             return {
                 "module": "ai-documents",
                 "action": "generate_document",
@@ -175,7 +180,7 @@ class Odin:
                 "needs_decomposition": False,
                 "prompt": prompt,
                 "message_text": prompt,
-                "params": {"format": fmt, "subject": prompt, "content": prompt, "title": prompt},
+                "params": {"format": fmt, "subject": prompt, "content": full_context, "title": prompt},
                 "session_id": real_session_id,
                 "session_context": {},
                 "memory_context": "",

@@ -16,6 +16,7 @@ from fastapi import APIRouter, Request
 from sqlalchemy import text
 
 router = APIRouter()
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
 
 
 # ============================================================================
@@ -128,8 +129,8 @@ async def telegram_webhook(request: Request):
         pass
 
     # Responder inmediatamente a Telegram para evitar timeout (25s)
-    # El procesamiento real se ejecuta en background
-    asyncio.create_task(
+    # El procesamiento real se ejecuta en background (manteniendo referencia fuerte)
+    bg_task = asyncio.create_task(
         _process_channel_message(
             channel="telegram",
             user_id=user_id,
@@ -139,6 +140,8 @@ async def telegram_webhook(request: Request):
             reply_to_message_id=reply_to_message_id,
         )
     )
+    _BACKGROUND_TASKS.add(bg_task)
+    bg_task.add_done_callback(_BACKGROUND_TASKS.discard)
     return {"status": "ok", "message": "received"}
 
 
