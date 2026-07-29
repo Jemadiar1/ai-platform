@@ -95,8 +95,8 @@ class LLMClient:
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": prompt},
                         ],
-                        "max_tokens": 2000,
-                        "temperature": 0.3,
+                        "max_tokens": 1200,
+                        "temperature": 0.2,
                     },
                 )
                 if response.status_code == 200:
