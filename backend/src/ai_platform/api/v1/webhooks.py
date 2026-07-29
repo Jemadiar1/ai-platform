@@ -588,10 +588,7 @@ async def _process_channel_message(
 
     # Paso 4: Ejecutar el módulo seleccionado
     try:
-        # Reacción 🧐 para indicar que se está procesando
-        reaction_ok = await _send_reaction(channel, chat_id, reply_to_message_id, "\U0001fae0")
-
-        # Iniciar typing indicator continuo si es Telegram
+        # Iniciar typing indicator si es Telegram
         try:
             if channel == "telegram":
                 from ai_platform.channels import TelegramChannel
@@ -606,20 +603,8 @@ async def _process_channel_message(
             task_id=f"tg-{chat_id}-{reply_to_message_id}",
         )
 
-        # Reacción ✅ al terminar
-        if reaction_ok:
-            try:
-                await _send_reaction(channel, chat_id, reply_to_message_id, "\u2705")
-            except Exception:
-                pass
-
     except Exception as e:
         logger.error(f"Error ejecutando módulo {module_name}: {e}", exc_info=True)
-        if reaction_ok:
-            try:
-                await _send_reaction(channel, chat_id, reply_to_message_id, "\u274c")
-            except Exception:
-                pass
         await _send_channel_error(channel, chat_id, "Error procesando tu solicitud")
         return {
             "status": "error",

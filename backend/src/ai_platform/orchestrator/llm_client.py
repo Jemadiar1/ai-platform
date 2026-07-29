@@ -37,8 +37,8 @@ ROUTING_MODELS = {
     "fast": "qwen3.6",
 }
 
-# Timeout de 12 segundos por llamada LLM para fallbacks interactivos veloces
-LLM_TIMEOUT = 12.0
+# Timeout de 45 segundos por llamada LLM para permitir generación de respuestas ricas
+LLM_TIMEOUT = 45.0
 
 # Headers para prompt caching de Claude
 ANTHROPIC_CACHE_HEADER = {"anthropic-beta": "prompt-caching-2024-07-31"}
