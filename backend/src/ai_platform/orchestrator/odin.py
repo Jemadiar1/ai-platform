@@ -234,6 +234,8 @@ class Odin:
 
         return {
             **routing,
+            "prompt": prompt,
+            "message_text": prompt,
             "params": params,
             "subtasks": subtasks,
             "session_id": session_id,
@@ -476,6 +478,14 @@ class Odin:
         enriched["module"] = decision["module"]
         enriched["action"] = decision.get("action", "send_message")
         enriched["tenant_id"] = decision.get("session_context", {}).get("tenant_id")
+
+        prompt = decision.get("prompt") or decision.get("message_text") or params.get("prompt") or params.get("message_text", "")
+        if prompt:
+            enriched["prompt"] = prompt
+            enriched["message_text"] = prompt
+            if "params" in enriched and isinstance(enriched["params"], dict):
+                enriched["params"]["message_text"] = prompt
+                enriched["params"]["prompt"] = prompt
 
         # Inyectar contextos si disponibles
         if "session_context" in decision:
