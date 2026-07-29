@@ -6,10 +6,9 @@ Soporta:
 - Notas de voz -> transcripción por OpenAI Whisper
 - Documentos (PDF, DOCX, XLSX) -> analisis por Odin
 - Imagenes con caption
-
-Configuración:
-- TELEGRAM_BOT_TOKEN: Token del bot desde @BotFather
-- TELEGRAM_WEBHOOK_SECRET: Secret token para validar webhooks
+- Typing indicators (sendChatAction)
+- Edición de mensajes (editMessageText) para progreso animado
+- Teclados inline para selección de formato de documento
 """
 
 import asyncio
@@ -18,6 +17,7 @@ import logging
 import os
 import tempfile
 from typing import Any
+from uuid import uuid4
 
 import httpx
 from openai import AsyncOpenAI
@@ -26,6 +26,46 @@ from ai_platform.channels.base import BaseChannel
 from ai_platform.core.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+# =========================================================================
+# Document format selection keyboard
+# =========================================================================
+
+_FORMAT_KEYBOARD: dict = {
+    "inline_keyboard": [
+        [
+            {"text": "\U0001f4c4 DOCX", "callback_data": "format:docx"},
+            {"text": "\U0001f4ca XLSX", "callback_data": "format:xlsx"},
+            {"text": "\U0001f4c1 PPTX", "callback_data": "format:pptx"},
+        ],
+        [
+            {"text": "\U0001f5bc\ufe0f PNG", "callback_data": "format:png"},
+            {"text": "\U0001f4d5 PDF", "callback_data": "format:pdf"},
+        ],
+        [
+            {"text": "\U0001f4e6 Todos", "callback_data": "format:all"},
+        ],
+    ],
+}
+
+# Format to file type mapping (for sendDocument vs sendPhoto)
+_FORMAT_MIME_MAP: dict[str, str] = {
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "pdf": "application/pdf",
+    "png": "image/png",
+}
+
+# Action mapping for format selection
+_ACTION_MAP: dict[str, str] = {
+    "all": "render_all",
+    "docx": "render_docx",
+    "xlsx": "render_xlsx",
+    "pptx": "render_pptx",
+    "png": "render_png",
+    "pdf": "render_pdf",
+}
 
 
 class TelegramChannel(BaseChannel):
@@ -58,9 +98,13 @@ class TelegramChannel(BaseChannel):
             return {"valid": False, "reason": "payload_no_es_dict"}
 
         if headers and self.webhook_secret:
-            secret_token = headers.get("X-Telegram-Bot-Api-Secret-Token", "")
-            if secret_token and secret_token != self.webhook_secret:
-                logger.warning("X-Telegram-Bot-Api-Secret-Token no coincide")
+            secret_token = (
+                headers.get("x-telegram-bot-api-secret-token")
+                or headers.get("X-Telegram-Bot-Api-Secret-Token")
+                or ""
+            )
+            if not secret_token or secret_token != self.webhook_secret:
+                logger.warning("X-Telegram-Bot-Api-Secret-Token no coincide o falta")
                 return {"valid": False, "reason": "secret_token_no_coincide"}
 
         update_id = payload.get("update_id")
@@ -429,43 +473,22 @@ class TelegramChannel(BaseChannel):
     async def process_attachments(self, attachments: list[dict], chat_id: str, reply_to_message_id: int | None = None) -> list[dict]:
         """Process all attachments from a message.
 
-        Downloads files, transcribes voice notes, and returns structured
-        file information.
-
-        Args:
-            attachments: List of attachment dicts from extract_message()
-            chat_id: Chat ID for error responses
+        Downloads files, transcribes voice notes, extracts text from documents.
+        Does NOT send any messages to the user — silent processing only.
 
         Returns:
-            List of processed file info dicts
+            List of processed file info dicts with transcriptions and extracted_text
         """
         if not attachments:
             return []
 
-        # Check if we have a voice note that doesn't have caption text
-        has_voice = any(a.get("type") == "voice" for a in attachments)
-
-        if not has_voice and not attachments:
-            return []
-
-        # Send processing message
-        processing_text = "Procesando tus archivos..."
-        try:
-            await self._reply_processing(chat_id, reply_to_message_id, processing_text)
-        except Exception as e:
-            logger.warning(f"No se pudo enviar mensaje de procesamiento: {e}")
-
         results = []
-        for i, att in enumerate(attachments):
+        for att in attachments:
             att_type = att.get("type")
             file_id = att.get("file_id")
 
             if not file_id:
-                results.append({
-                    "type": att_type,
-                    "file_id": file_id,
-                    "error": "No file_id",
-                })
+                results.append({"type": att_type, "file_id": file_id, "error": "No file_id"})
                 continue
 
             try:
@@ -480,32 +503,20 @@ class TelegramChannel(BaseChannel):
                             "duration": att.get("duration", 0),
                             "transcription": transcript,
                             "caption": att.get("caption", ""),
+                            "temp_path": temp_path,
                         })
+                    except Exception as e:
+                        results.append({"type": "voice", "file_id": file_id, "error": str(e)})
                     finally:
                         try:
                             os.unlink(temp_path)
                         except Exception:
                             pass
 
-                elif att_type == "audio":
-                    temp_path = await self.download_file_to_temp(file_id)
-                    try:
-                        results.append({
-                            "type": "audio",
-                            "file_id": file_id,
-                            "file_name": att.get("file_name", "audio"),
-                            "duration": att.get("duration", 0),
-                            "performer": att.get("performer"),
-                            "title": att.get("title"),
-                            "caption": att.get("caption", ""),
-                            "file_path": temp_path,
-                        })
-                    except Exception as e:
-                        results.append({"type": "audio", "file_id": file_id, "error": str(e)})
-
                 elif att_type == "document":
                     temp_path = await self.download_file_to_temp_with_ext(file_id, att.get("file_extension", "bin"))
                     try:
+                        extracted_text = await self._extract_document_text(temp_path, att.get("mime_type", ""))
                         results.append({
                             "type": "document",
                             "file_id": file_id,
@@ -513,79 +524,98 @@ class TelegramChannel(BaseChannel):
                             "file_extension": att.get("file_extension", "bin"),
                             "mime_type": att.get("mime_type", ""),
                             "caption": att.get("caption", ""),
-                            "file_path": temp_path,
+                            "temp_path": temp_path,
+                            "extracted_text": extracted_text,
                         })
                     except Exception as e:
                         results.append({"type": "document", "file_id": file_id, "error": str(e)})
 
                 elif att_type == "photo":
-                    results.append({
-                        "type": "photo",
-                        "file_id": file_id,
-                        "file_name": "photo.jpg",
-                        "width": att.get("width"),
-                        "height": att.get("height"),
-                        "caption": att.get("caption", ""),
-                    })
+                    results.append({"type": "photo", "file_id": file_id, "caption": att.get("caption", "")})
+
+                elif att_type == "audio":
+                    results.append({"type": "audio", "file_id": file_id, "title": att.get("title")})
 
                 elif att_type == "video":
-                    results.append({
-                        "type": "video",
-                        "file_id": file_id,
-                        "file_name": "video.mp4",
-                        "duration": att.get("duration", 0),
-                        "caption": att.get("caption", ""),
-                    })
-                
+                    results.append({"type": "video", "file_id": file_id})
+
                 elif att_type == "video_note":
-                    temp_path = await self.download_file_to_temp(file_id)
-                    try:
-                        results.append({
-                            "type": "video_note",
-                            "file_id": file_id,
-                            "file_name": "circle_video.mp4",
-                            "length": att.get("length", 0),
-                            "file_path": temp_path,
-                        })
-                    except Exception as e:
-                        results.append({"type": "video_note", "file_id": file_id, "error": str(e)})
+                    results.append({"type": "video_note", "file_id": file_id})
+
+                elif att_type == "animation":
+                    results.append({"type": "animation", "file_id": file_id})
 
             except Exception as e:
                 logger.error(f"Error procesando archivo {att_type}: {e}")
-                results.append({
-                    "type": att_type,
-                    "file_id": file_id,
-                    "error": str(e),
-                })
-
-        if results and not any(r.get("error") for r in results):
-            processed_info = []
-            for r in results:
-                if r["type"] == "voice":
-                    processed_info.append(
-                        f"Audio transcrito: {r.get('transcription', 'sin texto')} "
-                        f"({r.get('duration', 0)}s)"
-                    )
-                elif r["type"] == "document":
-                    processed_info.append(
-                        f"Documento cargado: {r.get('file_name', 'archivo')}"
-                    )
-                elif r["type"] == "file":
-                    processed_info.append(
-                        f"Archivo cargado: {r.get('file_name', 'archivo')}"
-                    )
-
-            if processed_info:
-                try:
-                    await self._reply_processing(
-                        chat_id,
-                        reply_to_message_id,
-                        f"{len(processed_info)} archivo(s) procesado(s):\n" + "\n".join(processed_info),
-                    )
-                except Exception as e:
-                    logger.warning(f"No se pudo enviar info de archivos: {e}")
+                results.append({"type": att_type, "file_id": file_id, "error": str(e)})
 
         return results
+
+    async def _extract_document_text(self, file_path: str, mime_type: str) -> str:
+        """Extract text from a document file.
+
+        Supports: PDF, DOCX, XLSX, TXT, CSV, plain text files.
+        Uses the same libraries as the document pipeline.
+        """
+        extracted = ""
+
+        try:
+            if mime_type == "application/pdf":
+                try:
+                    import pdfplumber
+                    with pdfplumber.open(file_path) as pdf:
+                        pages_text = []
+                        for page in pdf.pages:
+                            text = page.extract_text()
+                            if text:
+                                pages_text.append(text)
+                        extracted = "\n\n".join(pages_text)
+                except ImportError:
+                    import PyMuPDF
+                    doc = PyMuPDF.open(file_path)
+                    pages_text = []
+                    for page in doc:
+                        text = page.get_text()
+                        if text.strip():
+                            pages_text.append(text.strip())
+                    extracted = "\n\n".join(pages_text)
+
+            elif mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                from docx import Document
+                docx_obj = Document(file_path)
+                extracted = "\n".join(para.text for para in docx_obj.paragraphs)
+
+            elif (
+                mime_type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                or "ms-excel" in mime_type
+            ):
+                import openpyxl
+                wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+                sheet_text = []
+                for ws in wb.worksheets:
+                    sheet_text.append(f"--- Sheet: {ws.title} ---")
+                    for row in ws.iter_rows(values_only=True):
+                        row_str = " | ".join(str(cell) if cell is not None else "" for cell in row)
+                        if row_str.strip():
+                            sheet_text.append(row_str)
+                    wb.close()
+                extracted = "\n".join(sheet_text)
+
+            elif mime_type == "text/plain":
+                extracted = open(file_path, "r", encoding="utf-8").read()
+
+            elif mime_type == "text/csv":
+                content = open(file_path, "r", encoding="utf-8").read()
+                extracted = "CSV:\n" + content
+
+            elif mime_type in ("text/html", "text/markdown", "text/xml", "text/json", "text/yaml"):
+                extracted = open(file_path, "r", encoding="utf-8").read()
+
+        except Exception as e:
+            logger.warning(f"Error extrayendo texto de documento: {e}")
+            extracted = "[No se pudo extraer el texto del documento]"
+
+        return extracted if extracted else ""
 
     async def _reply_processing(self, chat_id: str, reply_to: int | None, text: str):
         """Send a quick processing indicator reply."""
@@ -735,6 +765,15 @@ class TelegramChannel(BaseChannel):
                     logger.warning(f"Rate limited HTTP. Esperando {retry_after}s (intento {attempt+1}/3)")
                     await asyncio.sleep(retry_after)
                     continue
+                if e.response.status_code == 400 and parse_mode:
+                    logger.warning("HTTP 400 en Telegram con parse_mode HTML. Reintentando envio como texto plano...")
+                    return await self.send_message(
+                        chat_id=chat_id,
+                        text=text,
+                        parse_mode=None,
+                        reply_markup=reply_markup,
+                        reply_to_message_id=reply_to_message_id,
+                    )
                 logger.error(f"HTTP error enviando mensaje a Telegram: {e.response.status_code} - {e.response.text}")
                 return {"status": "error", "message": f"HTTP {e.response.status_code}"}
             except httpx.ReadTimeout:
@@ -782,6 +821,249 @@ class TelegramChannel(BaseChannel):
 
     def _chunk_message(self, text: str, max_length: int = 4096) -> list[str]:
         return super()._chunk_message(text, max_length=max_length)
+
+    # =========================================================================
+    # Typing indicator (sendChatAction)
+    # =========================================================================
+
+    async def send_chat_action(self, chat_id: str, action: str = "typing") -> dict:
+        """Enviar un indicador de escritura u otra acción de chat a Telegram."""
+        if not self.token or not chat_id:
+            logger.warning("send_chat_action: token o chat_id ausentes")
+            return {"status": "error", "message": "token/chat_id ausentes"}
+
+        url = f"{self.base_url}/sendChatAction"
+        payload = {"chat_id": chat_id, "action": action}
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                if data.get("ok"):
+                    return data
+                error_desc = data.get("description", "Error desconocido")
+                logger.warning(f"sendChatAction falló: {error_desc}")
+                return {"status": "error", "message": error_desc}
+        except Exception as e:
+            logger.warning(f"Error en sendChatAction: {e}")
+            return {"status": "error", "message": str(e)}
+
+    # =========================================================================
+    # Message editing (editMessageText)
+    # =========================================================================
+
+    async def edit_message_text(
+        self,
+        chat_id: str,
+        message_id: int,
+        text: str,
+        parse_mode: str = "HTML",
+    ) -> dict:
+        """Editar un mensaje existente. Usado para indicador de progreso."""
+        if not self.token or not chat_id:
+            return {"status": "error", "message": "token/chat_id ausentes"}
+
+        url = f"{self.base_url}/editMessageText"
+        payload = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": text,
+            "parse_mode": parse_mode,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                if data.get("ok"):
+                    logger.debug(f"Mensaje editado: chat={chat_id}, msg={message_id}")
+                    return data
+                error_code = data.get("error_code")
+                if error_code == 400:
+                    logger.debug(f"editMessageText ignorado (posiblemente mensaje eliminado)")
+                    return {"status": "ignored", "message": data.get("description", "")}
+                if error_code == 403:
+                    logger.debug(f"editMessageText no permitido: {data.get('description')}")
+                    return {"status": "ignored", "message": data.get("description", "")}
+                logger.warning(f"editMessageText falló: {data.get('description')}")
+                return {"status": "error", "message": data.get("description", "Error desconocido")}
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 400:
+                if parse_mode:
+                    logger.warning("editMessageText HTTP 400 con HTML, reintentando como texto plano...")
+                    return await self.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        text=text,
+                        parse_mode=None,
+                    )
+                logger.debug(f"editMessageText HTTP 400: {e.response.text}")
+                return {"status": "error", "ok": False, "message": "mensaje no encontrado o no modificable"}
+            logger.error(f"Error HTTP en editMessageText: {e}")
+            return {"status": "error", "ok": False, "message": str(e)}
+        except Exception as e:
+            logger.warning(f"Error inesperado en editMessageText: {e}")
+            return {"status": "error", "ok": False, "message": str(e)}
+
+    # =========================================================================
+    # Reactions (setMessageReaction)
+    # =========================================================================
+
+    async def set_reaction(
+        self,
+        chat_id: str,
+        message_id: int,
+        emoji: str,
+    ) -> dict:
+        """Enviar reacción emoji a un mensaje (Telegram reaction)."""
+        if not self.token or not chat_id:
+            return {"status": "error", "message": "token/chat_id ausentes"}
+
+        url = f"{self.base_url}/setMessageReaction"
+        payload = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "reaction": emoji,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                if data.get("ok"):
+                    logger.debug(f"Reacción enviada: {emoji} a msg={message_id}")
+                    return data
+                logger.warning(f"setMessageReaction falló: {data.get('description')}")
+                return {"status": "error", "message": data.get("description", "Error desconocido")}
+        except Exception as e:
+            logger.warning(f"Error en setMessageReaction: {e}")
+            return {"status": "error", "message": str(e)}
+
+    # =========================================================================
+    # Delete message
+    # =========================================================================
+
+    async def delete_message(
+        self,
+        chat_id: str,
+        message_id: int,
+    ) -> dict:
+        """Eliminar un mensaje del chat."""
+        if not self.token or not chat_id:
+            return {"status": "error", "message": "token/chat_id ausentes"}
+
+        url = f"{self.base_url}/deleteMessage"
+        payload = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                if data.get("ok"):
+                    logger.debug(f"Mensaje eliminado: msg={message_id}")
+                    return data
+                logger.warning(f"deleteMessage falló: {data.get('description')}")
+                return {"status": "error", "message": data.get("description", "Error desconocido")}
+        except Exception as e:
+            logger.warning(f"Error en deleteMessage: {e}")
+            return {"status": "error", "message": str(e)}
+
+    # =========================================================================
+    # Send document from bytes
+    # =========================================================================
+
+    async def send_document_bytes(
+        self,
+        chat_id: str,
+        file_bytes: bytes,
+        filename: str,
+        mime_type: str = "application/octet-stream",
+        caption: str = "",
+        reply_to_message_id: int | None = None,
+    ) -> dict:
+        """Enviar un documento directamente desde bytes."""
+        if not self.token or not chat_id:
+            return {"status": "error", "message": "token/chat_id ausentes"}
+
+        url = f"{self.base_url}/sendDocument"
+        files = {"document": (filename, file_bytes, mime_type)}
+        data = {"chat_id": chat_id, "file_parse_mode": None}
+        if caption:
+            data["caption"] = caption
+        if reply_to_message_id:
+            data["reply_to_message_id"] = reply_to_message_id
+
+        last_error = None
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.post(url, files=files, data=data)
+                    response.raise_for_status()
+                    result = response.json()
+                    if result.get("ok"):
+                        logger.info(f"Documento enviado: {filename} to {chat_id}")
+                        return result
+                    logger.warning(f"sendDocument falló: {result.get('description')}")
+            except httpx.HTTPStatusError as e:
+                last_error = e
+                logger.warning(f"Error HTTP enviando documento (intento {attempt+1}/3): {e.response.text}")
+                await asyncio.sleep(2**attempt)
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Error enviando documento (intento {attempt+1}/3): {e}")
+                await asyncio.sleep(2**attempt)
+
+        logger.error(f"Error enviando documento tras 3 intentos: {last_error}")
+        return {"status": "error", "message": str(last_error)}
+
+    async def send_photo(
+        self,
+        chat_id: str,
+        file_bytes: bytes,
+        caption: str = "",
+        reply_to_message_id: int | None = None,
+    ) -> dict:
+        """Enviar una foto directamente desde bytes."""
+        if not self.token or not chat_id:
+            return {"status": "error", "message": "token/chat_id ausentes"}
+
+        url = f"{self.base_url}/sendPhoto"
+        files = {"photo": (file_bytes, "image/png")}
+        data = {"chat_id": chat_id}
+        if caption:
+            data["caption"] = caption
+        if reply_to_message_id:
+            data["reply_to_message_id"] = reply_to_message_id
+
+        last_error = None
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.post(url, files=files, data=data)
+                    response.raise_for_status()
+                    result = response.json()
+                    if result.get("ok"):
+                        logger.info(f"Foto enviada to {chat_id}")
+                        return result
+                    logger.warning(f"sendPhoto falló: {result.get('description')}")
+            except httpx.HTTPStatusError as e:
+                last_error = e
+                logger.warning(f"Error HTTP enviando foto (intento {attempt+1}/3): {e.response.text}")
+                await asyncio.sleep(2**attempt)
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Error enviando foto (intento {attempt+1}/3): {e}")
+                await asyncio.sleep(2**attempt)
+
+        logger.error(f"Error enviando foto tras 3 intentos: {last_error}")
+        return {"status": "error", "message": str(last_error)}
 
 
 def create_telegram_keyboard(buttons: list[list[str]], url: str | None = None) -> dict:
@@ -881,3 +1163,8 @@ class TelegramReactionHandler:
                 }
 
         return {"status": "ignored"}
+
+    async def download_photo(self, file_id: str) -> tuple[bytes, str]:
+        """Descargar foto de Telegram y retornar como bytes."""
+        photo_bytes, _ = await self.download_file(file_id)
+        return photo_bytes, "image/jpeg"

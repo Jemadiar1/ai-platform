@@ -151,6 +151,18 @@ _MODULES: list[ModuleInfo] = [
             ModuleAction("default", "Acción genérica de web"),
         ),
     ),
+    ModuleInfo(
+        name="ai-documents",
+        description="Procesamiento, análisis e ingestión de documentos",
+        handler_path="ai_platform.modules.ai_documents.handler",
+        category="documents",
+        actions=(
+            ModuleAction("document_ingest", "Subir y procesar documentos (PDF, DOCX, imágenes)"),
+            ModuleAction("document_chunk", "Dividir documentos en chunks"),
+            ModuleAction("ocr_extract", "Extracción OCR de texto en imágenes"),
+            ModuleAction("default", "Acción genérica de documentos"),
+        ),
+    ),
 ]
 
 # Build lookup dict
