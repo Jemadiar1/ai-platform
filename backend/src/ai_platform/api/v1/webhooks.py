@@ -568,6 +568,8 @@ async def _process_channel_message(
                 except asyncio.TimeoutError:
                     pass
         typing_task = asyncio.create_task(_keep_typing())
+        _BACKGROUND_TASKS.add(typing_task)
+        typing_task.add_done_callback(_BACKGROUND_TASKS.discard)
 
     try:
         decision = await odin_inst.decide(
@@ -616,6 +618,36 @@ async def _process_channel_message(
             tenant_id=tenant_id,
             task_id=f"tg-{chat_id}-{reply_to_message_id}",
         )
+
+        # Actualizar module_name si Odin redirigió (ej: uncategorized → ai-connect)
+        updated_module = decision["module"]
+        if updated_module != module_name:
+            logger.info(f"ODIN redirect: {module_name!r} → {updated_module!r}")
+            module_name = updated_module
+
+        if module_name == "ai-documents" or "formats" in module_result or any(k in module_result for k in ("docx", "pdf", "xlsx", "pptx", "png")):
+            try:
+                from ai_platform.channels import TelegramChannel, WhatsAppChannel, DiscordChannel
+                channel_map = {
+                    "telegram": TelegramChannel,
+                    "whatsapp": WhatsAppChannel,
+                    "discord": DiscordChannel,
+                }
+                chan_cls = channel_map.get(channel, TelegramChannel)
+                chan_inst = chan_cls()
+                await _send_document_result(chan_inst, module_result, chat_id, reply_to_message_id=reply_to_message_id)
+            except Exception as e:
+                logger.error(f"Error enviando documento al canal: {e}", exc_info=True)
+                response_text = _extract_response_text(module_result) or "Documento generado exitosamente."
+                await _send_to_channel(channel, chat_id, response_text, reply_to_message_id=reply_to_message_id)
+        else:
+            response_text = _extract_response_text(module_result)
+            if not response_text or not response_text.strip():
+                response_text = "¡Hola! Soy el asistente IA de NeuralCrew Labs. ¿En qué puedo ayudarte hoy?"
+
+            # Enviar la respuesta única directamente al canal
+            await _send_to_channel(channel, chat_id, response_text, reply_to_message_id=reply_to_message_id)
+
     except Exception as e:
         logger.error(f"Error procesando mensaje: {e}", exc_info=True)
         await _send_channel_error(channel, chat_id, "Error procesando tu solicitud")
@@ -628,35 +660,6 @@ async def _process_channel_message(
         typing_stop.set()
         if typing_task:
             typing_task.cancel()
-
-    # Actualizar module_name si Odin redirigió (ej: uncategorized → ai-connect)
-    updated_module = decision["module"]
-    if updated_module != module_name:
-        logger.info(f"ODIN redirect: {module_name!r} → {updated_module!r}")
-        module_name = updated_module
-
-    if module_name == "ai-documents" or "formats" in module_result or any(k in module_result for k in ("docx", "pdf", "xlsx", "pptx", "png")):
-        try:
-            from ai_platform.channels import TelegramChannel, WhatsAppChannel, DiscordChannel
-            channel_map = {
-                "telegram": TelegramChannel,
-                "whatsapp": WhatsAppChannel,
-                "discord": DiscordChannel,
-            }
-            chan_cls = channel_map.get(channel, TelegramChannel)
-            chan_inst = chan_cls()
-            await _send_document_result(chan_inst, module_result, chat_id, reply_to_message_id=reply_to_message_id)
-        except Exception as e:
-            logger.error(f"Error enviando documento al canal: {e}", exc_info=True)
-            response_text = _extract_response_text(module_result) or "Documento generado exitosamente."
-            await _send_to_channel(channel, chat_id, response_text, reply_to_message_id=reply_to_message_id)
-    else:
-        response_text = _extract_response_text(module_result)
-        if not response_text or not response_text.strip():
-            response_text = "¡Hola! Soy el asistente IA de NeuralCrew Labs. ¿En qué puedo ayudarte hoy?"
-
-        # Enviar la respuesta única directamente al canal
-        await _send_to_channel(channel, chat_id, response_text, reply_to_message_id=reply_to_message_id)
 
     return {
         "status": "success",

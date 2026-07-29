@@ -73,6 +73,55 @@ class Handler:
                 "timestamp": datetime.utcnow().isoformat(),
             }
 
+    def _ensure_rich_content(self, params: dict, tenant_id: str) -> dict:
+        """Synthesize rich structured markdown if content lacks markdown headings or is raw chat history."""
+        content = params.get("content", "") or params.get("prompt", "") or ""
+        subject = params.get("subject", "") or params.get("title", "") or "Documento Profesional"
+
+        has_headings = "# " in content or "## " in content or "### " in content
+        is_short_or_chat = len(content.strip()) < 150 or "USER:" in content or content == subject
+
+        if not has_headings or is_short_or_chat:
+            from ai_platform.orchestrator.llm_client import get_llm_client
+            import asyncio
+
+            sys_prompt = (
+                "Eres el redactor ejecutivo principal de NeuralCrew Labs.\n"
+                "Tu objetivo es redactar un DOCUMENTO COMPLETO Y PROFESIONAL en formato Markdown estricto.\n"
+                "Debes redactar contenido real, detallado, rico y útil. NUNCA devuelvas solo plantillas vacías o listas vacías.\n\n"
+                "REGLAS DE ESTRUCTURA MARKDOWN:\n"
+                "1. Encabezado de Nivel 1: '# Título Principal del Documento'\n"
+                "2. '## Resumen Ejecutivo': Un resumen bien redactado del propósito y los objetivos.\n"
+                "3. '## Especificaciones Técnicas y Alcance': Detalles técnicos, tono, público objetivo y requisitos.\n"
+                "4. '## Contenido Principal / Guión': Si es un guión, incluye los personajes en **negrita**, acotaciones de escena entre *paréntesis* y diálogos redactados completos. Si es un informe, incluye secciones y análisis profundo.\n"
+                "5. '## Tabla de Métricas y Presupuesto': Una tabla Markdown completa (| Columna 1 | Columna 2 | Columna 3 |) con datos razonables.\n"
+                "6. '## Conclusiones y Próximos Pasos': Recomendaciones de ejecución.\n\n"
+                "Redacta todo en español elegante y corporativo."
+            )
+
+            user_prompt = f"Tema o Requerimiento del Usuario: {subject}\n\nContexto / Historial previo:\n{content}"
+
+            try:
+                llm = get_llm_client()
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+
+                if loop and loop.is_running():
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        rich_text = pool.submit(lambda: asyncio.run(llm.generate_text(user_prompt, sys_prompt))).result(timeout=40.0)
+                else:
+                    rich_text = asyncio.run(llm.generate_text(user_prompt, sys_prompt))
+
+                if rich_text and len(rich_text) > 100:
+                    params["content"] = rich_text
+            except Exception as e:
+                logger.warning(f"Error generando contenido enriquecido con LLM: {e}")
+
+        return params
+
     # =========================================================================
     # Render actions
     # =========================================================================
@@ -80,18 +129,21 @@ class Handler:
     def _render_docx(self, params: dict, metadata: dict, tenant_id: str) -> dict:
         from ai_platform.modules.ai_documents.generators import Generators
 
+        params = self._ensure_rich_content(params, tenant_id)
         g = Generators(tenant_id)
         return g.render_docx(tenant_id, params)
 
     def _render_xlsx(self, params: dict, metadata: dict, tenant_id: str) -> dict:
         from ai_platform.modules.ai_documents.generators import Generators
 
+        params = self._ensure_rich_content(params, tenant_id)
         g = Generators(tenant_id)
         return g.render_xlsx(tenant_id, params)
 
     def _render_pptx(self, params: dict, metadata: dict, tenant_id: str) -> dict:
         from ai_platform.modules.ai_documents.generators import Generators
 
+        params = self._ensure_rich_content(params, tenant_id)
         g = Generators(tenant_id)
         return g.render_pptx(tenant_id, params)
 
@@ -104,16 +156,19 @@ class Handler:
     def _render_pdf(self, params: dict, metadata: dict, tenant_id: str) -> dict:
         from ai_platform.modules.ai_documents.generators import Generators
 
+        params = self._ensure_rich_content(params, tenant_id)
         g = Generators(tenant_id)
         return g.render_pdf(tenant_id, params)
 
     def _render_all(self, params: dict, metadata: dict, tenant_id: str) -> dict:
         from ai_platform.modules.ai_documents.generators import Generators
 
+        params = self._ensure_rich_content(params, tenant_id)
         g = Generators(tenant_id)
         return g.render_all(tenant_id, params)
 
     def _render_document(self, params: dict, metadata: dict, tenant_id: str) -> dict:
+        params = self._ensure_rich_content(params, tenant_id)
         fmt = (params.get("format") or params.get("file_type") or params.get("type") or "docx").lower()
         if "xlsx" in fmt or "excel" in fmt or "sheet" in fmt:
             return self._render_xlsx(params, metadata, tenant_id)
