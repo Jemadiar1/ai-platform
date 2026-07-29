@@ -42,7 +42,7 @@ class Handler:
         - default: fallback conversacional con LLM
     """
 
-    def execute(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def execute(self, payload: dict[str, Any]) -> dict[str, Any]:
         """
         Ejecutar acción del módulo ai-analytics.
 
@@ -101,7 +101,7 @@ class Handler:
     # Investigación web
     # =========================================================================
 
-    def _web_research(self, params: dict, metadata: dict, tenant_id: str) -> dict:
+    async def _web_research(self, params: dict, metadata: dict, tenant_id: str) -> dict:
         """Investigar fuentes web con búsqueda multi-fuente."""
         from ai_platform.services.web_research_service import web_research_service
 
@@ -114,36 +114,30 @@ class Handler:
             }
 
         try:
-            loop = asyncio.new_event_loop()
-            try:
-                research_results = loop.run_until_complete(
-                    web_research_service.fetch_search(
-                        query=query,
-                        tenant_id=tenant_id,
-                        source_by="ai-analytics",
-                    )
-                )
+            research_results = await web_research_service.fetch_search(
+                query=query,
+                tenant_id=tenant_id,
+                source_by="ai-analytics",
+            )
 
-                sources = research_results or []
-                summary_parts = []
-                for i, source in enumerate(sources[:5], 1):
-                    title = source.title if hasattr(source, "title") else source.get("title", "Sin título")
-                    snippet = source.content[:300] if hasattr(source, "content") else source.get("content", "")[:300]
-                    url = source.url if hasattr(source, "url") else source.get("url", "")
-                    summary_parts.append(f"{i}. {title} — {snippet} ({url})")
+            sources = research_results or []
+            summary_parts = []
+            for i, source in enumerate(sources[:5], 1):
+                title = source.title if hasattr(source, "title") else source.get("title", "Sin título")
+                snippet = source.content[:300] if hasattr(source, "content") else source.get("content", "")[:300]
+                url = source.url if hasattr(source, "url") else source.get("url", "")
+                summary_parts.append(f"{i}. {title} — {snippet} ({url})")
 
-                summary = "\n\n".join(summary_parts)
-                if not summary:
-                    summary = "No se encontraron resultados para la investigación."
+            summary = "\n\n".join(summary_parts)
+            if not summary:
+                summary = "No se encontraron resultados para la investigación."
 
-                return {
+            return {
                     "status": "success",
                     "response": summary,
                     "source_count": len(sources),
                     "query": query,
                 }
-            finally:
-                loop.close()
         except Exception as e:
             return {
                 "status": "failed",
@@ -151,7 +145,7 @@ class Handler:
                 "error": str(e),
             }
 
-    def _web_fetch(self, params: dict, metadata: dict, tenant_id: str) -> dict:
+    async def _web_fetch(self, params: dict, metadata: dict, tenant_id: str) -> dict:
         """Fetch y parsear contenido de una URL específica."""
         from ai_platform.services.web_research_service import web_research_service
 
@@ -164,37 +158,31 @@ class Handler:
             }
 
         try:
-            loop = asyncio.new_event_loop()
-            try:
-                fetch_result = loop.run_until_complete(
-                    web_research_service.fetch_url(
-                        url=url,
-                        tenant_id=tenant_id,
-                        source_by="ai-analytics",
-                    )
-                )
+            fetch_result = await web_research_service.fetch_url(
+                url=url,
+                tenant_id=tenant_id,
+                source_by="ai-analytics",
+            )
 
-                content = fetch_result.content if hasattr(fetch_result, "content") else fetch_result.get("content", "")
-                title = (
-                    fetch_result.title if hasattr(fetch_result, "title") else fetch_result.get("title", "Sin título")
-                )
-                if len(content) > 4000:
-                    content = content[:4000] + "... [truncado]"
+            content = fetch_result.content if hasattr(fetch_result, "content") else fetch_result.get("content", "")
+            title = (
+                fetch_result.title if hasattr(fetch_result, "title") else fetch_result.get("title", "Sin título")
+            )
+            if len(content) > 4000:
+                content = content[:4000] + "... [truncado]"
 
-                status_code = None
-                if hasattr(fetch_result, "status_code"):
-                    status_code = fetch_result.status_code
-                elif isinstance(fetch_result, dict):
-                    status_code = fetch_result.get("status_code")
+            status_code = None
+            if hasattr(fetch_result, "status_code"):
+                status_code = fetch_result.status_code
+            elif isinstance(fetch_result, dict):
+                status_code = fetch_result.get("status_code")
 
-                return {
-                    "status": "success",
-                    "response": f"## {title}\n\n{content}",
-                    "source_url": url,
-                    "status_code": status_code,
-                }
-            finally:
-                loop.close()
+            return {
+                "status": "success",
+                "response": f"## {title}\n\n{content}",
+                "source_url": url,
+                "status_code": status_code,
+            }
         except Exception as e:
             return {
                 "status": "failed",
@@ -202,7 +190,7 @@ class Handler:
                 "error": str(e),
             }
 
-    def _web_browser(self, params: dict, metadata: dict, tenant_id: str) -> dict:
+    async def _web_browser(self, params: dict, metadata: dict, tenant_id: str) -> dict:
         """Fetch con navegador headless para contenido dinámico."""
         from ai_platform.services.web_research_service import web_research_service
 
@@ -215,42 +203,36 @@ class Handler:
             }
 
         try:
-            loop = asyncio.new_event_loop()
-            try:
-                browser_result = loop.run_until_complete(
-                    web_research_service.browser_session(
-                        url=url,
-                        tenant_id=tenant_id,
-                        source_by="ai-analytics",
-                        extract_content=True,
-                    )
-                )
+            browser_result = await web_research_service.browser_session(
+                url=url,
+                tenant_id=tenant_id,
+                source_by="ai-analytics",
+                extract_content=True,
+            )
 
-                content = (
-                    browser_result.content if hasattr(browser_result, "content") else browser_result.get("content", "")
-                )
-                title = (
-                    browser_result.page_title
-                    if hasattr(browser_result, "page_title")
-                    else browser_result.get("title", "Sin título")
-                )
-                if content and len(content) > 4000:
-                    content = content[:4000] + "... [truncado]"
+            content = (
+                browser_result.content if hasattr(browser_result, "content") else browser_result.get("content", "")
+            )
+            title = (
+                browser_result.page_title
+                if hasattr(browser_result, "page_title")
+                else browser_result.get("title", "Sin título")
+            )
+            if content and len(content) > 4000:
+                content = content[:4000] + "... [truncado]"
 
-                screenshot = None
-                if hasattr(browser_result, "screenshot_base64"):
-                    screenshot = browser_result.screenshot_base64
-                elif isinstance(browser_result, dict):
-                    screenshot = browser_result.get("screenshot")
+            screenshot = None
+            if hasattr(browser_result, "screenshot_base64"):
+                screenshot = browser_result.screenshot_base64
+            elif isinstance(browser_result, dict):
+                screenshot = browser_result.get("screenshot")
 
-                return {
+            return {
                     "status": "success",
                     "response": f"## {title}\n\n{content}" if content else f"## {title}",
                     "source_url": url,
                     "screenshot": screenshot,
                 }
-            finally:
-                loop.close()
         except Exception as e:
             return {
                 "status": "failed",
@@ -679,7 +661,7 @@ class Handler:
     # Fallback
     # =========================================================================
 
-    def _default(self, params: dict, metadata: dict, tenant_id: str) -> dict:
+    async def _default(self, params: dict, metadata: dict, tenant_id: str) -> dict:
         """Fallback conversacional con LLM cuando no hay acción específica."""
         from ai_platform.orchestrator.llm_client import LLMClient
 
@@ -694,21 +676,15 @@ class Handler:
             }
 
         try:
-            loop = asyncio.new_event_loop()
-            try:
-                llm = LLMClient()
-                response = loop.run_until_complete(
-                    llm.chat(
-                        message_text=message_text,
-                        tenant_id=tenant_id,
-                    )
-                )
-                return {
-                    "status": "success",
-                    "response": response,
-                }
-            finally:
-                loop.close()
+            llm = LLMClient()
+            response = await llm.chat(
+                prompt=message_text,
+                tenant_id=tenant_id,
+            )
+            return {
+                "status": "success",
+                "response": response,
+            }
         except Exception as e:
             logger.error(f"Error en default handler: {e}")
             return {

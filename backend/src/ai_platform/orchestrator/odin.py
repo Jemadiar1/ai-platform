@@ -177,7 +177,7 @@ class Odin:
                 history=history,
                 memory_context=memory_context,
             )
-        except RuntimeError as e:
+        except Exception as e:
             logger.warning(f"LLM unavailable, using fallback: {e}")
             routing = await self.llm_client._route_with_fallback(prompt, tenant_id, history)
 
@@ -267,6 +267,7 @@ class Odin:
         """
         module = decision["module"]
         params = decision["params"]
+        logger.info(f"ODIN execute: module={module!r}, action={decision.get('action')}")
         session_id = decision.get("session_id") or decision.get("session_context", {}).get("id")
 
         if module == "uncategorized":
@@ -297,6 +298,7 @@ class Odin:
             "ai-ads",
             "ai-analytics",
             "ai-web",
+            "ai-documents",
         }
         if module not in supported_modules:
             self.trajectory_manager.add_step(
@@ -315,7 +317,7 @@ class Odin:
             }
 
         # Tracking de budget
-        await self.budget_tracker.begin_task(task_id, tenant_id, module)
+        self.budget_tracker.begin_task(task_id, tenant_id, module)
 
         # Verificar licencia del tenant para este agente
         from ai_platform.middleware.licensing import check_agent_access
@@ -356,10 +358,31 @@ class Odin:
         # Inyectar contexto en la payload
         enriched_payload = self._enrich_payload(params, decision)
 
+        # Pre-execution fallback: document_ingest sin params → redirigir a ai-connect
+        if module == "ai-analytics" and decision.get("action") == "document_ingest":
+            has_file = enriched_payload.get("file_bytes") or enriched_payload.get("file_base64") or enriched_payload.get("original_filename")
+            if not has_file:
+                logger.warning(f"document_ingest sin archivo, redirigiendo a ai-connect:send_message")
+                module = "ai-connect"
+                decision["module"] = "ai-connect"
+                decision["action"] = "send_message"
+                decision["params"] = {}
+                enriched_payload = self._enrich_payload({}, decision)
+
         try:
             # Simular ejecución del módulo
             # En producción, esto invocará al handler del módulo
             result = await self._invoke_module(module, enriched_payload)
+
+            # Fallback: si la acción no es válida, reintentar con "default"
+            if (
+                isinstance(result, dict)
+                and result.get("status") == "failed"
+                and "no encontrada" in result.get("error", "")
+            ):
+                logger.warning(f"Action inválida en {module}, reintentando con 'default': {result.get('error')}")
+                enriched_payload["action"] = "default"
+                result = await self._invoke_module(module, enriched_payload)
 
             # Registrar paso de ejecución en trayectoria
             self.trajectory_manager.add_step(
@@ -384,7 +407,7 @@ class Odin:
                     main_result[f"subagent_{sub_result.module}"] = sub_result.result
                 result["result"] = main_result
 
-            await self.budget_tracker.end_task(task_id, module, success=True)
+            self.budget_tracker.end_task(task_id, module, success=True)
 
             # Actualizar memoria con esta interacción
             await self.memory_manager.sync_turn(
@@ -414,7 +437,7 @@ class Odin:
             }
 
         except Exception as e:
-            await self.budget_tracker.end_task(task_id, module, success=False, error=str(e))
+            self.budget_tracker.end_task(task_id, module, success=False, error=str(e))
             # Registrar error en trayectoria
             self.trajectory_manager.add_step(
                 session_id,
@@ -449,6 +472,8 @@ class Odin:
         durante la sesión.
         """
         enriched = {**params}
+        enriched["module"] = decision["module"]
+        enriched["action"] = decision.get("action", "send_message")
         enriched["tenant_id"] = decision.get("session_context", {}).get("tenant_id")
 
         # Inyectar contextos si disponibles
@@ -494,7 +519,14 @@ class Odin:
 
         try:
             handler_instance = HandlerClass()
-            result = handler_instance.execute(payload)
+            if asyncio.iscoroutinefunction(handler_instance.execute):
+                result = await handler_instance.execute(payload)
+            else:
+                res = handler_instance.execute(payload)
+                if asyncio.iscoroutine(res):
+                    result = await res
+                else:
+                    result = res
             return result if isinstance(result, dict) else {"status": "ok", "data": result}
         except Exception as e:
             logger.error(f"Module execution failed: {module} -> {e}")

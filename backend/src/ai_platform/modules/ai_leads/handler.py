@@ -11,6 +11,7 @@ Las acciones se dividen en:
 
 """
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Any
@@ -30,7 +31,7 @@ class Handler:
         - default: Fallback conversacional con LLM
     """
 
-    def execute(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def execute(self, payload: dict[str, Any]) -> dict[str, Any]:
         """
         Ejecutar acción del módulo ai-leads.
 
@@ -80,7 +81,7 @@ class Handler:
     # Generación de leads
     # =========================================================================
 
-    def _generate_leads(
+    async def _generate_leads(
         self, params: dict, metadata: dict, tenant_id: str
     ) -> dict:
         """Generar leads calificados con IA según industria y target."""
@@ -150,7 +151,7 @@ class Handler:
 
         try:
             llm = LLMClient()
-            response = llm.chat(prompt=prompt, tenant_id=tenant_id)
+            response = await llm.chat(prompt=prompt, tenant_id=tenant_id)
 
             # Parsear la respuesta del LLM como JSON de leads
             leads = self._parse_leads_response(response)
@@ -320,7 +321,7 @@ class Handler:
     # Fallback
     # =========================================================================
 
-    def _default(
+    async def _default(
         self, params: dict, metadata: dict, tenant_id: str
     ) -> dict:
         """Fallback conversacional con LLM cuando no hay acción específica."""
@@ -343,11 +344,11 @@ class Handler:
 
         try:
             llm = LLMClient()
-            prompt = (
+            build_prompt = (
                 "Eres un experto en generación y gestión de leads B2B/B2C. "
                 f"Responde a la siguiente solicitud:\n{message_text}"
             )
-            response = llm.chat(prompt=prompt, tenant_id=tenant_id)
+            response = await llm.chat(prompt=build_prompt, tenant_id=tenant_id)
             content = self._extract_content(response)
 
             return {

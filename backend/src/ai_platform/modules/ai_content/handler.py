@@ -11,6 +11,7 @@ Las acciones se dividen en:
 
 """
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Any
@@ -30,7 +31,7 @@ class Handler:
         - default: Fallback conversacional con LLM
     """
 
-    def execute(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def execute(self, payload: dict[str, Any]) -> dict[str, Any]:
         """
         Ejecutar acción del módulo ai-content.
 
@@ -80,7 +81,7 @@ class Handler:
     # Generación de contenido
     # =========================================================================
 
-    def _generate_content(
+    async def _generate_content(
         self, params: dict, metadata: dict, tenant_id: str
     ) -> dict:
         """Generar contenido de marketing con IA según tipo, tema y tono."""
@@ -121,7 +122,7 @@ class Handler:
 
         try:
             llm = LLMClient()
-            response = llm.chat(prompt=prompt, tenant_id=tenant_id)
+            response = await llm.chat(prompt=prompt, tenant_id=tenant_id)
 
             content = self._extract_content(response)
 
@@ -224,7 +225,7 @@ class Handler:
     # Fallback
     # =========================================================================
 
-    def _default(
+    async def _default(
         self, params: dict, metadata: dict, tenant_id: str
     ) -> dict:
         """Fallback conversacional con LLM cuando no hay acción específica."""
@@ -246,11 +247,7 @@ class Handler:
 
         try:
             llm = LLMClient()
-            prompt = (
-                "Eres un experto en marketing digital de contenido. "
-                f"Responde a la siguiente solicitud:\n{message_text}"
-            )
-            response = llm.chat(prompt=prompt, tenant_id=tenant_id)
+            response = await llm.chat(prompt=prompt, tenant_id=tenant_id)
             content = self._extract_content(response)
 
             return {
@@ -266,3 +263,13 @@ class Handler:
                     "¿Puedes especificar tipo de contenido, tema y tono?"
                 ),
             }
+
+    async def _run_llm(self, prompt: str, tenant_id: str) -> dict:
+        """Ejecutar llamada LLM desde código sync usando un nuevo event loop."""
+        llm = LLMClient()
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            return await llm.chat(prompt=prompt, tenant_id=tenant_id)
+        finally:
+            loop.close()

@@ -11,6 +11,7 @@ Las acciones se dividen en:
 
 """
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Any
@@ -30,7 +31,7 @@ class Handler:
         - default: Fallback conversacional con LLM
     """
 
-    def execute(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def execute(self, payload: dict[str, Any]) -> dict[str, Any]:
         """
         Ejecutar acción del módulo ai-ads.
 
@@ -80,7 +81,7 @@ class Handler:
     # Creación de campañas publicitarias
     # =========================================================================
 
-    def _create_campaign(
+    async def _create_campaign(
         self, params: dict, metadata: dict, tenant_id: str
     ) -> dict:
         """Crear campaña publicitaria completa con IA."""
@@ -161,7 +162,7 @@ class Handler:
 
         try:
             llm = LLMClient()
-            response = llm.chat(prompt=prompt, tenant_id=tenant_id)
+            response = await llm.chat(prompt=prompt, tenant_id=tenant_id)
             content = self._extract_content(response)
 
             # Calcular métricas de la campaña
@@ -249,7 +250,7 @@ class Handler:
     # Fallback
     # =========================================================================
 
-    def _default(
+    async def _default(
         self, params: dict, metadata: dict, tenant_id: str
     ) -> dict:
         """Fallback conversacional con LLM cuando no hay acción específica."""
@@ -273,12 +274,12 @@ class Handler:
 
         try:
             llm = LLMClient()
-            prompt = (
+            build_prompt = (
                 "Eres un experto en publicidad digital y gestión de campañas "
                 "de pago por clic. "
                 f"Responde a la siguiente solicitud:\n{message_text}"
             )
-            response = llm.chat(prompt=prompt, tenant_id=tenant_id)
+            response = await llm.chat(prompt=build_prompt, tenant_id=tenant_id)
             content = self._extract_content(response)
 
             return {

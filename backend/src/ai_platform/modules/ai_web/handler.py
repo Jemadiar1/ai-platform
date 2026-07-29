@@ -11,6 +11,7 @@ Las acciones se dividen en:
 
 """
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Any
@@ -30,7 +31,7 @@ class Handler:
         - default: Fallback conversacional con LLM
     """
 
-    def execute(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def execute(self, payload: dict[str, Any]) -> dict[str, Any]:
         """
         Ejecutar acción del módulo ai-web.
 
@@ -80,7 +81,7 @@ class Handler:
     # Generación de páginas web
     # =========================================================================
 
-    def _generate_page(
+    async def _generate_page(
         self, params: dict, metadata: dict, tenant_id: str
     ) -> dict:
         """Generar página web completa con HTML/CSS responsivo."""
@@ -168,7 +169,7 @@ class Handler:
 
         try:
             llm = LLMClient()
-            response = llm.chat(prompt=prompt, tenant_id=tenant_id)
+            response = await llm.chat(prompt=prompt, tenant_id=tenant_id)
             html_content = self._extract_content(response)
             clean_html = self._clean_html_output(html_content)
 
@@ -275,7 +276,7 @@ class Handler:
     # Fallback
     # =========================================================================
 
-    def _default(
+    async def _default(
         self, params: dict, metadata: dict, tenant_id: str
     ) -> dict:
         """Fallback conversacional con LLM cuando no hay acción específica."""
@@ -299,12 +300,12 @@ class Handler:
 
         try:
             llm = LLMClient()
-            prompt = (
+            build_prompt = (
                 "Eres un experto diseñador y desarrollador web frontend. "
                 "Genera código HTML y CSS moderno, responsivo y profesional. "
                 f"Solicitud del usuario: {message_text}"
             )
-            response = llm.chat(prompt=prompt, tenant_id=tenant_id)
+            response = await llm.chat(prompt=build_prompt, tenant_id=tenant_id)
             content = self._extract_content(response)
 
             return {
