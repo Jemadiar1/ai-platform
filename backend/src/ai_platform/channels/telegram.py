@@ -724,8 +724,10 @@ class TelegramChannel(BaseChannel):
         payload = {
             "chat_id": chat_id,
             "text": text,
-            "parse_mode": parse_mode,
         }
+
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
 
         if reply_markup:
             payload["reply_markup"] = reply_markup
@@ -869,8 +871,10 @@ class TelegramChannel(BaseChannel):
             "chat_id": chat_id,
             "message_id": message_id,
             "text": text,
-            "parse_mode": parse_mode,
         }
+
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
 
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:

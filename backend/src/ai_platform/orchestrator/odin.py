@@ -18,6 +18,7 @@ Uso:
     # decision = {module, action, params, confidence, ...}
 """
 
+import asyncio
 import json
 import logging
 from typing import Any
