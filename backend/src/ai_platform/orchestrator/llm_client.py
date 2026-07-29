@@ -37,8 +37,8 @@ ROUTING_MODELS = {
     "fast": "qwen3.6",
 }
 
-# Timeout de 45 segundos por llamada LLM para permitir generación de respuestas ricas
-LLM_TIMEOUT = 45.0
+# Timeout de 300 segundos (5 minutos) por llamada LLM para no interrumpir tareas complejas
+LLM_TIMEOUT = httpx.Timeout(300.0, connect=30.0)
 
 # Headers para prompt caching de Claude
 ANTHROPIC_CACHE_HEADER = {"anthropic-beta": "prompt-caching-2024-07-31"}
@@ -85,7 +85,7 @@ class LLMClient:
                     "Authorization": f"Bearer {self.settings.NAN_API_KEY}",
                     "Content-Type": "application/json",
                 },
-                timeout=httpx.Timeout(120.0, connect=15.0),
+                timeout=LLM_TIMEOUT,
             ) as client:
                 response = await client.post(
                     self._chat_path,

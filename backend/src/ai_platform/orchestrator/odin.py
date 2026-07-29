@@ -183,9 +183,14 @@ class Odin:
                 "kb_context": [],
             }
 
-        # Fast-path rule para creación de documentos, guiones y archivos (.docx, .xlsx, .pptx, .pdf)
-        doc_keywords = ["word", "docx", "documento", "guion", "guión", "excel", "xlsx", "pptx", "powerpoint", "pdf", "script", "plantilla"]
-        if any(k in clean_p for k in doc_keywords):
+        # Fast-path rule para creación/renderizado de archivos de documentos (.docx, .xlsx, .pptx, .pdf)
+        doc_exts = [".docx", ".xlsx", ".pptx", ".pdf", "docx", "xlsx", "pptx"]
+        action_verbs = ["crea", "crear", "genera", "generar", "redacta", "redactar", "haz", "hacer", "escribe", "escribir", "exporta", "exportar", "descargar", "dame", "hazme", "en word", "en excel", "en pdf"]
+        
+        is_query_about_skills = any(q in clean_p for q in ["hablarme", "habilidades", "puedes hacer", "qué haces", "cómo funciona", "explicar", "cuáles son", "sabes hacer"])
+        is_explicit_doc_request = any(e in clean_p for e in doc_exts) or (any(v in clean_p for v in action_verbs) and any(k in clean_p for k in ["documento", "guion", "guión", "word", "excel", "pdf", "script", "plantilla"]))
+
+        if is_explicit_doc_request and not is_query_about_skills:
             session = await self.session_manager.get_or_create(
                 tenant_id=tenant_id,
                 user_id=user_id,
