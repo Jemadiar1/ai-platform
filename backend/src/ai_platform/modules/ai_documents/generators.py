@@ -805,8 +805,8 @@ class Generators:
                 "file_size_bytes": len(pdf_bytes),
                 "rendering_ms": elapsed_ms,
             }
-        except ImportError:
-            logger.warning("weasyprint not installed, falling back to existing renderer")
+        except Exception as e:
+            logger.warning(f"WeasyPrint fallo o no está disponible ({e}), usando ReportRendererService de respaldo")
             from ai_platform.services.report_renderer import ReportRendererService
             from ai_platform.services.report_models import ReportFormat, ReportSpec, Section
 
