@@ -185,11 +185,12 @@ class Odin:
             }
 
         # Fast-path rule para creación/renderizado de archivos de documentos (.docx, .xlsx, .pptx, .pdf)
-        doc_exts = [".docx", ".xlsx", ".pptx", ".pdf", "docx", "xlsx", "pptx"]
-        action_verbs = ["crea", "crear", "genera", "generar", "redacta", "redactar", "haz", "hacer", "escribe", "escribir", "exporta", "exportar", "descargar", "dame", "hazme", "en word", "en excel", "en pdf"]
+        doc_exts = [".docx", ".xlsx", ".pptx", ".pdf", "docx", "xlsx", "pptx", "pdf"]
+        action_verbs = ["crea", "crear", "genera", "generar", "redacta", "redactar", "haz", "hacer", "escribe", "escribir", "exporta", "exportar", "descargar", "dame", "hazme", "en word", "en excel", "en pdf", "en powerpoint"]
+        doc_targets = ["documento", "guion", "guión", "word", "excel", "xlsx", "docx", "pptx", "pdf", "powerpoint", "presentacion", "presentación", "diapositiva", "diapositivas", "script", "plantilla", "hoja", "informe", "reporte", "presupuesto", "tabla"]
         
         is_query_about_skills = any(q in clean_p for q in ["hablarme", "habilidades", "puedes hacer", "qué haces", "cómo funciona", "explicar", "cuáles son", "sabes hacer"])
-        is_explicit_doc_request = any(e in clean_p for e in doc_exts) or (any(v in clean_p for v in action_verbs) and any(k in clean_p for k in ["documento", "guion", "guión", "word", "excel", "pdf", "script", "plantilla"]))
+        is_explicit_doc_request = any(e in clean_p for e in doc_exts) or (any(v in clean_p for v in action_verbs) and any(k in clean_p for k in doc_targets))
 
         if is_explicit_doc_request and not is_query_about_skills:
             session = await self.session_manager.get_or_create(
@@ -199,9 +200,9 @@ class Odin:
             )
             real_session_id = session["id"]
             fmt = "docx"
-            if any(x in clean_p for x in ["excel", "xlsx", "hoja de calculo", "tabla"]):
+            if any(x in clean_p for x in ["excel", "xlsx", "hoja", "tabla", "presupuesto", "calculo", "cálculo"]):
                 fmt = "xlsx"
-            elif any(x in clean_p for x in ["pptx", "powerpoint", "presentacion", "diapositiva"]):
+            elif any(x in clean_p for x in ["pptx", "powerpoint", "presentacion", "presentación", "diapositiva", "diapositivas", "slides"]):
                 fmt = "pptx"
             elif "pdf" in clean_p:
                 fmt = "pdf"

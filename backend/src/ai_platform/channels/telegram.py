@@ -1007,7 +1007,7 @@ class TelegramChannel(BaseChannel):
 
         url = f"{self.base_url}/sendDocument"
         files = {"document": (filename, file_bytes, mime_type)}
-        data = {"chat_id": chat_id, "file_parse_mode": None}
+        data = {"chat_id": chat_id, "parse_mode": "HTML"}
         if caption:
             data["caption"] = caption
         if reply_to_message_id:
